@@ -452,19 +452,23 @@ async function showRemoteCompanies() {
  const list=$('#remoteCompanies');
  list.replaceChildren();
  const repo=companyRepo;
- if(!repo)return;
+ if(!repo){list.textContent='Connect GitHub to see saved companies.';return;}
+ list.textContent='Looking for GitHub companies…';
  try {
   const rows=await repo.list();
   if(repo!==companyRepo||!$('#companyDialog').open)return;
   if(!rows.length){list.textContent='No XML companies yet. Close this panel and use Save to create one.';return;}
+  list.replaceChildren();
   for(const row of rows){
    const button=document.createElement('button');
    button.type='button';
    button.textContent=row.name;
+   button.title=row.folder;
+   if(rows.filter(other=>other.name===row.name).length>1)button.textContent=row.folder;
    button.addEventListener('click',()=>loadRemoteCompany(row.path));
    list.append(button);
   }
- }catch(error){syncStatus(error.message);}
+ }catch(error){if(repo===companyRepo){list.textContent='Could not list GitHub companies.';syncStatus(error.message);}}
 }
 async function loadRemoteCompany(path) {
  if(syncBusy||!companyRepo)return;
@@ -505,7 +509,7 @@ async function syncCompany(manual) {
  if(!path&&manual){
   if(!state.force.name?.trim()){syncStatus('Enter a Force name before saving a new company to GitHub.');return;}
   const name=state.force.name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,48)||'company';
-  path=syncConfig.pendingPath||'companies/'+name+'-'+crypto.randomUUID().slice(0,8)+'.xml';
+  path=syncConfig.pendingPath||'companies/'+name+'-'+crypto.randomUUID().slice(0,8)+'/company.xml';
   syncConfig.pendingPath=path;storeSyncConfig();
  }
  if(!path)return;
@@ -541,7 +545,7 @@ $('#companyConnect').addEventListener('submit',async event=>{
   input.value='';
   await repo.verify();
   if(syncConfig.repository.toLowerCase()!==repo.name.toLowerCase())delete syncConfig.pendingPath;
-  companyRepo=repo;syncConfig.repository=repo.name;syncConfig.auto=$('#companyAuto').checked;syncBlocked=false;storeSyncConfig();
+  companyRepo=repo;window.dispatchEvent(new Event('company-repository-changed'));syncConfig.repository=repo.name;syncConfig.auto=$('#companyAuto').checked;syncBlocked=false;storeSyncConfig();
   syncStatus('Connected to '+repo.name+'.');
   await showRemoteCompanies();
   scheduleCompanySync();
@@ -559,7 +563,7 @@ $('#companyDisconnect').addEventListener('click',()=>{
  syncStatus('GitHub disconnected. The local company and its repository link were kept.');
 });
 function closeCompanySession(){
- companyRepo=undefined;clearTimeout(syncTimer);$('#companyToken').value='';showRemoteCompanies();
+ companyRepo=undefined;window.dispatchEvent(new Event('company-repository-changed'));clearTimeout(syncTimer);$('#companyToken').value='';showRemoteCompanies();
 }
 $('#companyUnlink').addEventListener('click',()=>{
  if(!confirm('Unlink this local company? A later Save creates a separate file.'))return;
@@ -580,11 +584,14 @@ $('#companyXmlImport').addEventListener('change',async event=>{
  const file=event.target.files?.[0];
  if(!file)return;
  try{
-  if(file.size>CompanyXML.MAX_BYTES)throw Error('Company XML exceeds 750 KB.');
-  const loaded=validated(CompanyXML.read(new Uint8Array(await file.arrayBuffer())));
-  if(!confirm('Load XML into the app and unlink it from any GitHub company?'))return;
+  if(syncBusy)throw Error('Wait for company sync to finish before opening a backup.');
+  const isJson=/\.json$/i.test(file.name);
+  if(file.size>(isJson?25_000_000:CompanyXML.MAX_BYTES))throw Error('The backup file is too large.');
+  const loaded=validated(isJson?JSON.parse(await file.text()):CompanyXML.read(new Uint8Array(await file.arrayBuffer())));
+  if(syncBusy)throw Error('Wait for company sync to finish before opening a backup.');
+  if(!confirm('Open this backup on this device? Your current company will be available as a previous local copy.'))return;
   keepPreviousCompany();detachCompany();delete syncConfig.pendingPath;storeSyncConfig();
-  state=loaded;save(false);render();$('#companyDialog').close();syncStatus('Local company XML loaded.');
+  state=loaded;save(false);render();$('#companyDialog').close();syncStatus('Local company backup opened.');
  }catch(error){syncStatus(error.message);}
  finally{event.target.value='';}
 });

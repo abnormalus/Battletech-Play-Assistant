@@ -1,8 +1,9 @@
 (() => {
   'use strict';
   const dialog = document.querySelector('#mechLibrary');
-  const form = dialog.querySelector('form[data-connect]');
-  const token = form.elements.token;
+  const connect = dialog.querySelector('#mechConnect');
+  let indexedRepository;
+  let indexingRepository;
   const query = dialog.querySelector('#mechQuery');
   const results = dialog.querySelector('#mechResults');
   const status = dialog.querySelector('#mechStatus');
@@ -20,24 +21,10 @@
     return element;
   }
 
-  async function github(repo, key, path) {
-    const response = await fetch('https://api.github.com/repos/' + repo + path, {
-      headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + key },
-      cache: 'no-store'
-    });
-    if (!response.ok) {
-      if ([401, 403, 404].includes(response.status)) {
-        throw Error('GitHub returned ' + response.status + '. Check the repository, branch, and token’s Contents access.');
-      }
-      throw Error('GitHub returned HTTP ' + response.status + '.');
-    }
-    return response.json();
-  }
-
-  async function blobBytes(repo, key, sha) {
-    const blob = await github(repo, key, '/git/blobs/' + sha);
+  async function blobBytes(repo, sha) {
+    const blob = await repo.api('/git/blobs/' + sha);
     if (blob.encoding !== 'base64') throw Error('GitHub did not return readable file data.');
-    return Uint8Array.from(atob(blob.content), character => character.charCodeAt(0));
+    return CompanyXML.fromBase64(blob.content);
   }
 
   function zipEntries(bytes) {
@@ -200,46 +187,51 @@
     }
   }
 
-  form.addEventListener('submit', async event => {
-    event.preventDefault();
+  async function indexGitHub() {
+    const repo = companyRepo;
+    connect.hidden = Boolean(repo);
+    if (!repo || repo === indexedRepository || repo === indexingRepository) return;
     clearLibrary();
+    indexingRepository = repo;
     const id = requestId;
-    const repo = form.elements.repository.value.trim().replace(/^https:\/\/github\.com\//i, '').replace(/\/$/, '').replace(/\.git$/i, '');
-    const key = token.value.trim();
-    token.value = '';
-    const branch = form.elements.branch.value.trim();
-    if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !key || !branch) {
-      status.textContent = 'Enter a GitHub repository, branch, and read token.';
-      return;
-    }
     status.textContent = 'Indexing the GitHub library…';
     try {
-      const tree = await github(repo, key, '/git/trees/' + encodeURIComponent(branch) + '?recursive=1');
+      const root = await repo.api('/git/trees/' + encodeURIComponent(repo.branch));
+      const folder = root.tree.find(item => item.type === 'tree' && /^SSW-Master(?:-master)?$/i.test(item.path));
+      const tree = await repo.api('/git/trees/' + (folder?.sha || encodeURIComponent(repo.branch)) + '?recursive=1');
       if (id !== requestId) return;
       const files = tree.tree.filter(item => item.type === 'blob' && isUnit(item.path));
-      const zip = tree.tree.find(item => item.type === 'blob' && /(?:^|\/)SSW-Master(?:-master)?\.zip$/i.test(item.path));
+      const zip = root.tree.find(item => item.type === 'blob' && /^SSW-Master(?:-master)?\.zip$/i.test(item.path)) ||
+        tree.tree.find(item => item.type === 'blob' && /(?:^|\/)SSW-Master(?:-master)?\.zip$/i.test(item.path));
       if (files.length && !tree.truncated) {
         installLibrary(files.map(item => ({
-          path: item.path, read: async () => new TextDecoder().decode(await blobBytes(repo, key, item.sha))
+          path: folder ? folder.path + '/' + item.path : item.path,
+          read: async () => new TextDecoder().decode(await blobBytes(repo, item.sha))
         })), 'GitHub');
       } else if (zip) {
         status.textContent = 'Reading the GitHub ZIP…';
-        const bytes = await blobBytes(repo, key, zip.sha);
-        if (id === requestId) installLibrary(zipEntries(bytes), 'the GitHub ZIP');
+        const bytes = await blobBytes(repo, zip.sha);
+        if (id !== requestId) return;
+        installLibrary(zipEntries(bytes), 'the GitHub ZIP');
       } else {
-        throw Error(tree.truncated ? 'GitHub’s file index is too large. Use a local copy of the SSW ZIP.' :
-          'No SSW-Master folder or ZIP was found. Check the branch or choose a local ZIP.');
+        throw Error(tree.truncated ? 'GitHub returned an incomplete file index. Try a local SSW ZIP.' :
+          'No .ssw, .saw, or SSW-Master ZIP files were found on the default branch.');
       }
+      indexedRepository = repo;
     } catch (error) {
       if (id === requestId) status.textContent = error.message;
+    } finally {
+      if (indexingRepository === repo) indexingRepository = undefined;
     }
-  });
+  }
+
 
   const zipInput = dialog.querySelector('#mechZip');
   zipInput.addEventListener('change', async () => {
     const file = zipInput.files[0];
     if (!file) return;
     zipInput.value = '';
+    indexedRepository = undefined;
     clearLibrary();
     const id = requestId;
     status.textContent = 'Reading the ZIP…';
@@ -251,10 +243,18 @@
     }
   });
   query.addEventListener('input', renderResults);
-  dialog.querySelector('#mechDisconnect').addEventListener('click', () => {
+  window.addEventListener('company-repository-changed', () => {
+    indexedRepository = undefined;
+    indexingRepository = undefined;
     clearLibrary();
-    token.value = '';
-    status.textContent = 'Library disconnected.';
+    status.textContent = '';
   });
-  document.querySelector('#openMechLibrary').addEventListener('click', () => dialog.showModal());
+  connect.addEventListener('click', () => {
+    dialog.close();
+    showCompanyDialog();
+  });
+  document.querySelector('#openMechLibrary').addEventListener('click', () => {
+    dialog.showModal();
+    indexGitHub();
+  });
 })();

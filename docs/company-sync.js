@@ -86,14 +86,21 @@ class PrivateCompanyRepository {
  }
  path(path){return path.split('/').map(encodeURIComponent).join('/');}
  async list(){
-  try{
-   const rows=await this.api('/contents/companies');
-   if(!Array.isArray(rows))throw Error('The companies path must be a directory.');
-   return rows.filter(row=>row.type==='file'&&/^companies\/[^/]+\.xml$/i.test(row.path));
-  }catch(error){if(error.status===404)return [];throw error;}
+  const root=await this.api('/git/trees/'+encodeURIComponent(this.branch));
+  const companies=root.tree.find(item=>item.type==='tree'&&item.path==='companies');
+  if(!companies)return [];
+  const listing=await this.api('/git/trees/'+companies.sha+'?recursive=1');
+  if(listing.truncated)throw Error('GitHub returned an incomplete company list.');
+  return listing.tree.flatMap(item=>{
+   const match=item.type==='blob'&&/^([^/]+)\/company\.xml$/i.exec(item.path);
+   if(!match)return [];
+   const folder=match[1];
+   const name=folder.replace(/-[a-f0-9]{8}$/i,'').replace(/[-_]+/g,' ')||folder;
+   return [{path:'companies/'+item.path,name,folder}];
+  }).sort((a,b)=>a.name.localeCompare(b.name)||a.folder.localeCompare(b.folder));
  }
  async read(path){
-  if(!/^companies\/[^/]+\.xml$/i.test(path))throw Error('Choose an XML company file.');
+  if(!/^companies\/([^/]+)\/company\.xml$/i.test(path))throw Error('Choose an XML company file.');
   try{
    const file=await this.api('/contents/'+this.path(path));
    if(file.type!=='file'||file.encoding!=='base64'||file.size>CompanyXML.MAX_BYTES)throw Error('Choose a company XML file up to 750 KB.');

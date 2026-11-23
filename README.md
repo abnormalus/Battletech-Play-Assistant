@@ -14,13 +14,13 @@ Set the current system, Force Scale, travel mix and travel cost method, then pub
 
 ## Private GitHub sync
 
-Open Load, enter an owner/repository for a private GitHub repository, and connect with a fine-grained token scoped to that repository with Contents read and write. The app keeps the token only for the current session. Save creates a company XML file under companies/. On another device, connect and select that file from Load. Autosync saves linked edits automatically and checks for newer snapshots while connected. If both copies changed, download the local XML before loading the GitHub copy.
+Choose **Open** and connect to the private library and campaign repository using a fine-grained token scoped to that repository with **Contents: Read and write**. The same session powers company sync and unit lookup. Select a company from the GitHub picker, or choose **Open local backup** to restore an XML or JSON backup. **Save** gives each new company its own `companies/<company-folder>/company.xml` file. Autosync updates the open company while connected.
 
 On the Contract sheet, adjust the offered steps before choosing Sign contract. Negotiation uses up to twice Scale in available Reputation and up to two exchanges of two concession steps for one upgrade step. Sign records a snapshot in MSRB History. Current campaign Reputation remains the basis for future negotiations.
 
 ## Mech and vehicle lookup
 
-Open **Mech lookup**, enter your private GitHub library as `owner/repository`, and connect with a fine-grained token with **Contents: Read-only**. The app indexes extracted `.ssw` and `.saw` files and falls back to an `SSW-Master-master.zip` archive if there is no extracted library. You can also select a local ZIP. Search by unit name or model, open a result, and choose **Print / Save as PDF**.
+After connecting through **Open**, choose **Mech lookup** to search the repository’s extracted `.ssw` and `.saw` files or its `SSW-Master-master.zip` archive. You can also select a local ZIP. Search by name or model, select a result, and choose **Print / Save as PDF**.
 
 ## Development
 
