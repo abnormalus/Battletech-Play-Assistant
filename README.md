@@ -18,8 +18,6 @@ Open Load, enter an owner/repository for a private GitHub repository, and connec
 
 On the Contract sheet, adjust the offered steps before choosing Sign contract. Negotiation uses up to twice Scale in available Reputation and up to two exchanges of two concession steps for one upgrade step. Sign records a snapshot in MSRB History. Current campaign Reputation remains the basis for future negotiations.
 
-## Run locally
-
-On Windows with Python 3 installed, run `Launch Play Assistant.cmd` and keep its window open while you use the app at `http://localhost:8765/`. You can also serve the `docs` folder over localhost or HTTPS.
+## Development
 
 The PWA source lives in `docs/`. Bump the cache version in `docs/sw.js` when changing the cached app shell.
