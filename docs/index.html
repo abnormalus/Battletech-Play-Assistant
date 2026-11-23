@@ -1,6 +1,6 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101719"><meta name="description" content="Offline campaign tracker for BattleTech Mercenaries"><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon-192.png"><link rel="apple-touch-icon" href="./icon-192.png"><link rel="stylesheet" href="./style.css"><script src="./contract-board.js" defer></script><script src="./company-sync.js" defer></script><script src="./app.js" defer></script><title>Mercenaries Play Assistant</title></head>
-<body><header><div class="mast"><img src="./icon-192.png" alt="" width="48" height="48"><div><h1>Mercenaries Play Assistant</h1><p id="campaignName"></p></div></div><div class="actions company-buttons"><button type="button" id="companyLoad">Load</button><button type="button" class="primary" id="companySave">Save</button><button id="install" hidden>Install app</button></div></header>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101719"><meta name="description" content="Offline campaign tracker for BattleTech Mercenaries"><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon-192.png"><link rel="apple-touch-icon" href="./icon-192.png"><link rel="stylesheet" href="./style.css"><script src="./contract-board.js" defer></script><script src="./company-sync.js" defer></script><script src="./mech-library.js" defer></script><script src="./app.js" defer></script><title>Mercenaries Play Assistant</title></head>
+<body><header><div class="mast"><img src="./icon-192.png" alt="" width="48" height="48"><div><h1>Mercenaries Play Assistant</h1><p id="campaignName"></p></div></div><div class="actions company-buttons"><button type="button" id="companyLoad">Load</button><button type="button" class="primary" id="companySave">Save</button><button type="button" id="openMechLibrary">Mech lookup</button><button id="install" hidden>Install app</button></div></header>
 <main><p id="syncStatus" role="status">Company saves locally. Connect GitHub with Load to enable sync.</p><section class="metrics" aria-label="Campaign totals"><button class="metric" data-sheet="contract" data-field="starting" title="Edit starting warchest on the Contract sheet"><span>Warchest</span><strong id="balance"></strong><small>Edit starting value</small></button><button class="metric" data-sheet="force" data-field="bv" title="Edit available Battle Value on the Force sheet"><span>Battle Value</span><strong id="bv"></strong><small>Edit available BV</small></button><button class="metric" data-sheet="contract" data-field="reputation" title="Edit starting reputation on the Contract sheet"><span>Reputation</span><strong id="rep"></strong><small>Edit starting value</small></button><button class="metric" data-sheet="force" data-field="roster" title="Manage roster on the Force sheet"><span>Personnel</span><strong id="rosterCount"></strong><small>Manage roster</small></button></section>
 <nav aria-label="Campaign sheets" id="tabs"><button data-tab="board">Contract Board</button><button data-tab="force">Force sheet</button><button data-tab="contract">Contract sheet</button><button data-tab="history">MSRB History</button><button data-tab="employment">Employment agreement</button><button data-tab="reference">Rulebook &amp; backups</button></nav>
 <section id="panel" aria-label="Selected sheet"></section><p id="status" role="status"></p></main>
@@ -19,4 +19,23 @@
 <p>Save creates a company XML file in the repository’s <code>companies</code> folder. Load an existing file to keep editing it across devices.</p>
 <h3>Local XML</h3><div class="actions"><label class="file-button">Load XML file<input id="companyXmlImport" type="file" accept=".xml,application/xml,text/xml"></label>
 <button type="button" id="companyXmlExport">Download company XML</button><button type="button" id="companyPrevious">Download previous copy</button><button type="button" id="companyUnlink">Unlink company</button></div></dialog>
+<dialog id="mechLibrary" aria-labelledby="mechLibraryTitle">
+  <div class="section-head"><h2 id="mechLibraryTitle">Mech and vehicle lookup</h2><form method="dialog"><button>Close</button></form></div>
+  <form data-connect>
+    <div class="fields">
+      <label>GitHub repository<input name="repository" placeholder="owner/repository" required autocomplete="off"></label>
+      <label>Branch<input name="branch" value="main" required></label>
+      <label>Read-only GitHub token<input name="token" type="password" required autocomplete="off"></label>
+    </div>
+    <p>Use a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">fine-grained token</a> with Contents read access for the private library. The token stays in this tab’s memory.</p>
+    <div class="actions"><button type="submit" class="primary">Connect library</button><button type="button" id="mechDisconnect">Disconnect</button></div>
+  </form>
+  <details><summary>Use a local SSW ZIP</summary><label>Library ZIP<input type="file" id="mechZip" accept=".zip,application/zip"></label></details>
+  <p id="mechStatus" role="status"></p>
+  <section id="mechSearch" hidden>
+    <label>Search by name or model<input type="search" id="mechQuery" placeholder="Archer or ARC-5CS" autocomplete="off"></label>
+    <div id="mechResults" class="actions" aria-live="polite"></div>
+  </section>
+  <article id="mechSheet"></article>
+</dialog>
 </body></html>

@@ -18,6 +18,10 @@ Open Load, enter an owner/repository for a private GitHub repository, and connec
 
 On the Contract sheet, adjust the offered steps before choosing Sign contract. Negotiation uses up to twice Scale in available Reputation and up to two exchanges of two concession steps for one upgrade step. Sign records a snapshot in MSRB History. Current campaign Reputation remains the basis for future negotiations.
 
+## Mech and vehicle lookup
+
+Open **Mech lookup**, enter your private GitHub library as `owner/repository`, and connect with a fine-grained token with **Contents: Read-only**. The app indexes extracted `.ssw` and `.saw` files and falls back to an `SSW-Master-master.zip` archive if there is no extracted library. You can also select a local ZIP. Search by unit name or model, open a result, and choose **Print / Save as PDF**.
+
 ## Development
 
 The PWA source lives in `docs/`. Bump the cache version in `docs/sw.js` when changing the cached app shell.

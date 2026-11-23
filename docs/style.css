@@ -8,3 +8,18 @@ dialog{color:var(--ink);background:var(--surface);border:1px solid var(--line);b
 dialog::backdrop{background:#061012b8}dialog h3{margin-top:1rem}.inline-check{display:flex;align-items:center;gap:.4rem}.inline-check input{width:auto}
 .history-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr));gap:.75rem}
 .history-facts dt{color:var(--muted)}.history-facts dd{margin:0}.sheet pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}.sheet small{color:var(--muted)}input[readonly]{color:var(--muted)}
+
+#mechLibrary details,#mechSearch,#mechSheet{margin-top:1rem}
+#mechResults{margin:.6rem 0;max-height:15rem;overflow:auto}
+#mechResults p{flex-basis:100%}
+#mechSheet h4{margin-bottom:.35rem}
+#mechSheet table{width:100%;border-collapse:collapse}
+#mechSheet th,#mechSheet td{text-align:left;border-bottom:1px solid var(--line);padding:.35rem}
+@media print{
+  body:has(#mechLibrary[open] #mechSheet h3){background:white;color:black}
+  body:has(#mechLibrary[open] #mechSheet h3)>:not(#mechLibrary),#mechLibrary[open]:has(#mechSheet h3)>:not(#mechSheet),#mechSheet button,#mechLibrary::backdrop{display:none}
+  #mechLibrary[open]:has(#mechSheet h3){position:static;display:block;width:100%;max-width:none;max-height:none;overflow:visible;margin:0;padding:0;border:0;background:white;color:black}
+  #mechSheet p{color:black}
+  #mechSheet th,#mechSheet td{border-color:#888}
+  #mechSheet tr{break-inside:avoid}
+}
