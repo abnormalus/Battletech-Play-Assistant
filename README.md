@@ -12,6 +12,12 @@ Attach your own rulebook on the Rulebook & backups tab to open its original shee
 
 Set the current system, Force Scale, travel mix and travel cost method, then publish ten offers. The default board has six travel contracts and four on-world contracts. The board and campaign are saved on this device. Download the board as Markdown to share the offers, or load one into the Contract sheet. Generated destinations and jump counts are campaign estimates. The four summary cards at the top open the fields that feed those totals.
 
+## Campaign months and formations
+
+On the **Contract sheet** or **MSRB History**, advance one month to post upkeep of 500 SP per Force Scale and collect monthly pay while a signed contract is active. **Resolve contract** records the outcome, final payment, scrap proceeds, and reputation change, then ends monthly contract pay.
+
+On the **Force sheet**, use **Link unit sheet** to fill in the unit name and BV from the library. Record a scrap value on each roster entry. Formation lists link to individual sheets, and **View formation sheets** opens all linked sheets with a print option.
+
 ## Private GitHub sync
 
 Choose **Open** and connect to the private library and campaign repository using a fine-grained token scoped to that repository with **Contents: Read and write**. The same session powers company sync and unit lookup. Select a company from the GitHub picker, or choose **Open local backup** to restore an XML or JSON backup. **Save** gives each new company its own `companies/<company-folder>/company.xml` file. Autosync updates the open company while connected.

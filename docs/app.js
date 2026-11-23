@@ -4,7 +4,7 @@ const fields = {
  force: [['name','Force name'],['commander','Commanding officer'],['scale','Scale','number'],['bv','Available BV','number'],['bsp','Battlefield Support Points','number'],['skill','Force skill'],['advances','Advances','number']],
  contract: [['name','Contract name'],['employer','Employer'],['location','Contract location'],['action','Type of action'],['scale','Scale','number'],['base','Base pay %','number'],['baseSP','Base pay SP','number'],['support','Support %','number'],['supportMode','Support type'],['supportSP','Support SP','number'],['transport','Transportation %','number'],['transportSP','Transportation SP','number'],['salvage','Salvage %','number'],['salvageMode','Salvage type'],['salvageSP','Salvage SP','number'],['command','Command terms'],['months','Length in months','number'],['starting','Starting warchest SP','number'],['reputation','Starting reputation','number'],['brief','Mission briefing','textarea']],
  employment: [['employer','Employer'],['unit','Unit'],['assignment','Assignment'],['forces','Forces committed'],['from','Start date','date'],['until','End date','date'],['location','Reporting location'],['transport','Transportation coverage %','number'],['pay','Monthly remuneration SP','number'],['support','Support and repairs'],['salvage','Salvage terms'],['command','Command rights'],['terms','Additional terms','textarea'],['employerSignature','Employer signatory'],['unitSignature','Unit signatory']],
- roster: [['formation','Formation'],['unit','Unit / variant'],['bv','Battle Value','number'],['abilities','Unit abilities'],['pilot','MechWarrior'],['gunnery','Gunnery','number'],['piloting','Piloting','number'],['advance','Advances','number'],['special','Special pilot abilities'],['notes','In-play notes','textarea']],
+ roster: [['formation','Formation'],['unit','Unit / variant'],['bv','Battle Value','number'],['scrap','Scrap value SP','number'],['abilities','Unit abilities'],['pilot','MechWarrior'],['gunnery','Gunnery','number'],['piloting','Piloting','number'],['advance','Advances','number'],['special','Special pilot abilities'],['notes','In-play notes','textarea']],
  ledger: [['month','Month'],['event','Event'],['cost','Cost SP','number'],['cover','Coverage SP','number'],['paid','Paid SP','number'],['rep','Rep change','number']]
 };
 
@@ -72,7 +72,9 @@ function contractKey(contract) {
  return JSON.stringify(['name','employer','location','action','months','base','supportMode','support','transport','salvageMode','salvage','command']
   .map(key=>contract[key]||''));
 }
+function activeContract(){return state.history.findLast(entry=>!entry.resolution);}
 function signContract() {
+ if(activeContract()){notify('Resolve the active contract before signing another.');return;}
  if(!state.contract.name?.trim()||!state.contract.employer?.trim()){
    notify('Enter a contract name and employer before signing.');return;
  }
@@ -91,7 +93,7 @@ function signContract() {
   support:[contract.supportMode,contract.support&&contract.support+'%'].filter(Boolean).join(' '),
   salvage:[contract.salvageMode,contract.salvage&&contract.salvage+'%'].filter(Boolean).join(' '),command:contract.command||''};
  state.contract=contract;
- state.history.push({signedAt,offerId,key,contract:{...contract},agreement,company:state.force.name||'',reputationUsed:budget?.used||0,
+ state.history.push({signedAt,startMonth:state.month,offerId,key,contract:{...contract},agreement,company:state.force.name||'',reputationUsed:budget?.used||0,
   exchanges:budget?.credits||0,steps:state.draft?{...state.draft.steps}:undefined,
   offeredSteps:state.draft?{...state.draft.base}:undefined});
  active='history';save();render();
@@ -108,18 +110,71 @@ function renderHistory() {
    return '<article class="sheet"><div class="section-head"><div><h3>'+esc(c.name)+'</h3><p>'+esc(c.employer)+(entry.company?' · '+esc(entry.company):'')+'</p></div>'+
     '<time datetime="'+esc(entry.signedAt)+'">'+new Date(entry.signedAt).toLocaleDateString()+'</time></div><dl class="history-facts">'+
     facts.filter(([,v])=>v).map(([k,v])=>'<div><dt>'+k+'</dt><dd>'+esc(v)+'</dd></div>').join('')+'</dl>'+
+    (entry.resolution?'<p>'+esc(entry.resolution.outcome)+' · Month '+entry.resolution.month+' · Settlement '+fmt.format(entry.resolution.paid)+' SP · Scrap proceeds '+fmt.format(entry.resolution.scrap)+' SP · Reputation '+fmt.format(entry.resolution.rep)+'</p><p>'+esc(entry.resolution.notes)+'</p>':'')+
     (c.brief?'<details><summary>Original mission briefing</summary><pre>'+esc(c.brief)+'</pre></details>':'')+'</article>';
  }).join('');
  return '<section class="sheet"><h2>MSRB History</h2><p>'+(state.history.length===1?'1 signed contract':state.history.length+' signed contracts')+'</p></section>'+
-  (list||'<p>Sign a contract from the Contract sheet to start the company’s history.</p>');
+  campaignTimePanel()+(list||'<p>Sign a contract from the Contract sheet to start the company’s history.</p>');
 }
 
+const outcomes=['Completed','Failed','Terminated'];
+function cleanResolution(value) {
+ if(!outcomes.includes(value?.outcome)||!Number.isSafeInteger(value.month)||value.month<1)return undefined;
+ return {outcome:value.outcome,month:value.month,paid:Math.max(0,numeric(value.paid)),
+  scrap:Math.max(0,numeric(value.scrap)),rep:numeric(value.rep),notes:String(value.notes??'').slice(0,12000)};
+}
+function monthlyTransaction(month,entry,forceScale) {
+ const scale=Math.max(1,Math.floor(numeric(forceScale)||numeric(entry?.contract.scale)||1));
+ const paid=entry?numeric(entry.contract.baseSP||entry.agreement.pay):0;
+ return {month:String(month),event:entry?'On contract · '+entry.contract.name:'Between contracts',
+  cost:String(500*scale),paid:String(Math.max(0,paid))};
+}
+function campaignTimePanel() {
+ const entry=activeContract();
+ const row=monthlyTransaction(state.month,entry,state.force.scale);
+ const term=entry?numeric(entry.contract.months):0;
+ return '<section class="sheet"><div class="section-head"><h2>Campaign month '+state.month+'</h2><div class="actions"><button data-action="advance-month">Advance one month</button>'+
+  (entry?'<button data-action="resolve-contract">Resolve contract</button>':'')+'</div></div><p>'+
+  (entry?'On contract · '+esc(entry.contract.name)+' · '+Math.max(0,state.month-entry.startMonth)+(term?' of '+term:'')+' months recorded':'Between contracts')+
+  '</p><p>Next ledger entry: '+fmt.format(numeric(row.cost))+' SP upkeep'+(entry?' · '+fmt.format(numeric(row.paid))+' SP contract pay':'')+'.</p></section>';
+}
+function advanceMonth() {
+ if(state.ledger.length>=1000){notify('The ledger has reached 1,000 rows.');return;}
+ const row=monthlyTransaction(state.month,activeContract(),state.force.scale);
+ if(!confirm('Record month '+state.month+' with '+fmt.format(numeric(row.cost))+' SP upkeep and '+fmt.format(numeric(row.paid))+' SP pay?'))return;
+ state.ledger.push(row);
+ state.month++;
+ save();render();notify('Month '+row.month+' recorded in the warchest ledger.');
+}
+let resolvingContract;
+function openResolution() {
+ resolvingContract=activeContract();
+ if(!resolvingContract)return;
+ const dialog=$('#resolveContract');
+ dialog.querySelector('form[data-resolution]').reset();
+ dialog.querySelector('[data-contract-name]').textContent=resolvingContract.contract.name+' · Month '+state.month;
+ dialog.showModal();
+}
+function resolveContract(event) {
+ event.preventDefault();
+ const entry=resolvingContract;
+ if(!entry||entry!==activeContract()){$('#resolveContract').close();notify('The active contract changed.');return;}
+ if(state.ledger.length>=1000){notify('The ledger has reached 1,000 rows.');$('#resolveContract').close();return;}
+ const result=cleanResolution({...Object.fromEntries(new FormData(event.target)),month:state.month});
+ if(!result)return;
+ state.ledger.push({month:String(state.month),event:'Contract resolved · '+entry.contract.name,
+  paid:String(result.paid+result.scrap),rep:String(result.rep)});
+ entry.resolution=result;resolvingContract=undefined;
+ $('#resolveContract').close();
+ save();render();notify('Contract resolved and settlement recorded.');
+}
 const storageKey = 'mercenaries-campaign-v1';
-const fresh = () => ({version:1,force:{},contract:{},employment:{},roster:[],ledger:[],board:{options:{traveling:6,model:'standard'}},history:[],draft:null});
+const fresh = () => ({version:1,month:1,force:{},contract:{},employment:{},roster:[],ledger:[],board:{options:{traveling:6,model:'standard'}},history:[],draft:null});
 const numeric = v => Number.isFinite(Number(v)) ? Number(v) : 0;
 function validated(source) {
  if (source?.version !== 1) throw Error('Choose a version 1 campaign backup.');
  const cleaned = fresh();
+ cleaned.month=Number.isSafeInteger(source.month)&&source.month>0?source.month:1;
  function values(value, group) {
    if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('The backup contains an invalid sheet.');
    return Object.fromEntries(fields[group].filter(([key]) => ['string','number'].includes(typeof value[key])).map(([key]) => [key,String(value[key]).slice(0,12000)]));
@@ -127,7 +182,13 @@ function validated(source) {
  for (const group of ['force','contract','employment']) cleaned[group]=values(source[group],group);
  for (const group of ['roster','ledger']) {
    if (!Array.isArray(source[group]) || source[group].length>1000) throw Error('The backup contains an invalid row list.');
-   cleaned[group]=source[group].map(row=>values(row,group));
+   cleaned[group]=source[group].map(row=>{
+      const clean=values(row,group);
+      if(group==='roster'&&typeof row.sheet?.path==='string'&&row.sheet.path.length<=1024&&/\.(ssw|saw)$/i.test(row.sheet.path)){
+        clean.sheet={path:row.sheet.path,repoId:Number.isSafeInteger(row.sheet.repoId)?row.sheet.repoId:null};
+      }
+      return clean;
+    });
  }
  if(source.board?.options) cleaned.board.options=ContractBoard.settings(source.board.options);
  const published=source.board?.published;
@@ -147,7 +208,8 @@ function validated(source) {
      const contract=values(entry.contract,'contract');
      return {signedAt:new Date(entry.signedAt).toISOString(),offerId:typeof entry.offerId==='string'?entry.offerId.slice(0,60):undefined,
        contract,agreement:values(entry.agreement??{},'employment'),company:String(entry.company||'').slice(0,12000),
-       key:contractKey(contract),reputationUsed:Math.max(0,Math.min(200,Math.floor(numeric(entry.reputationUsed)))),
+       startMonth:Number.isSafeInteger(entry.startMonth)&&entry.startMonth>0?entry.startMonth:1,
+        resolution:cleanResolution(entry.resolution),key:contractKey(contract),reputationUsed:Math.max(0,Math.min(200,Math.floor(numeric(entry.reputationUsed)))),
        exchanges:Math.max(0,Math.min(2,Math.floor(numeric(entry.exchanges)))),
        steps:validSteps(entry.steps)||undefined,offeredSteps:validSteps(entry.offeredSteps)||undefined};
    });
@@ -192,6 +254,26 @@ function totals() {
  $('#rosterCount').textContent=fmt.format(state.roster.length);
  $('#campaignName').textContent=state.force.name || 'Campaign sheets';
 }
+function formationName(row) {return row.formation?.trim()||'';}
+function unitLabel(row,index){return row.unit||'Unit '+(index+1);}
+function unitLink(row,index) {
+ const label=esc(unitLabel(row,index));
+ return row.sheet?'<a href="#mechSheet" data-action="view-unit-sheet" data-index="'+index+'">'+label+'</a>':label;
+}
+function renderFormations() {
+ const panel=$('#formationList');
+ if(!panel)return;
+ const formations=new Map();
+ state.roster.forEach((row,index)=>{
+  const name=formationName(row);
+  if(!formations.has(name))formations.set(name,[]);
+  formations.get(name).push({row,index});
+ });
+ panel.innerHTML=Array.from(formations,([name,members])=>'<section class="sheet"><div class="section-head"><h3>'+
+  esc(name||'Unassigned')+'</h3><button data-action="formation-sheets" data-formation="'+esc(name)+'"'+
+  (members.some(({row})=>row.sheet)?'':' disabled')+'>View formation sheets</button></div><ul>'+
+  members.map(({row,index})=>'<li>'+unitLink(row,index)+'</li>').join('')+'</ul></section>').join('');
+}
 function render() {
  $('#tabs').querySelectorAll('button').forEach(button=>button.setAttribute('aria-current',button.dataset.tab===active));
  const panel=$('#panel');
@@ -204,9 +286,13 @@ function render() {
    showPDF();
  } else if(active==='force'){
    panel.innerHTML='<section class="sheet"><h2>Mercenary force record</h2><div class="fields">'+inputs('force')+'</div></section><section class="sheet"><div class="section-head"><h2>Force roster</h2><button class="primary" data-action="add" data-group="roster">Add unit</button></div>'+(
-     state.roster.length ? state.roster.map((row,index)=>'<div class="row"><div class="section-head"><h3>Unit '+(index+1)+'</h3><button data-action="remove" data-group="roster" data-index="'+index+'">Remove unit</button></div><div class="fields">'+inputs('roster',index)+'</div></div>').join('') : '<p>Add units with their formation, pilot, and battle value.</p>')+'</section>';
+     state.roster.length ? state.roster.map((row,index)=>'<div class="row"><div class="section-head"><h3>'+unitLink(row,index)+'</h3><div class="actions"><button data-action="link-unit" data-index="'+index+'">'+(row.sheet?'Change linked sheet':'Link unit sheet')+'</button>'+
+      (row.sheet?'<button data-action="unlink-unit" data-index="'+index+'">Unlink sheet</button>':'')+
+      '<button data-action="remove" data-group="roster" data-index="'+index+'">Remove unit</button></div></div><div class="fields">'+inputs('roster',index)+'</div></div>').join('') :
+      '<p>Add units with their formation, pilot, and battle value.</p>')+'</section><div id="formationList"></div>';
+   renderFormations();
  } else if(active==='contract'){
-   panel.innerHTML='<section class="sheet"><div class="section-head"><h2>Mercenary contract record</h2><button class="primary" data-action="sign-contract">Sign contract</button></div><div class="fields">'+inputs('contract')+'</div></section>'+negotiationPanel()+'<section class="sheet"><div class="section-head"><h2>Warchest ledger</h2><button class="primary" data-action="add" data-group="ledger">Add transaction</button></div><p>Coverage and payments add to the balance. Enter costs as positive amounts to subtract them.</p>'+
+   panel.innerHTML=campaignTimePanel()+'<section class="sheet"><div class="section-head"><h2>Mercenary contract record</h2><button class="primary" data-action="sign-contract">Sign contract</button></div><div class="fields">'+inputs('contract')+'</div></section>'+negotiationPanel()+'<section class="sheet"><div class="section-head"><h2>Warchest ledger</h2><button class="primary" data-action="add" data-group="ledger">Add transaction</button></div><p>Coverage and payments add to the balance. Enter costs as positive amounts to subtract them.</p>'+
      (state.ledger.length?'<div class="ledger"><table><thead><tr>'+fields.ledger.map(([,label])=>'<th scope="col">'+label+'</th>').join('')+'<th scope="col">Balance</th><th scope="col">Actions</th></tr></thead><tbody>'+
        state.ledger.map((row,index)=>'<tr>'+fields.ledger.map(field=>'<td>'+control('ledger',field,index)+'</td>').join('')+'<td data-balance="'+index+'"></td><td><button data-action="remove" data-group="ledger" data-index="'+index+'">Remove</button></td></tr>').join('')+'</tbody></table></div>':'<p>No transactions recorded.</p>')+'</section>';
  } else {
@@ -264,13 +350,37 @@ $('#panel').addEventListener('input',event=>{
  if(!group || !key) return;
  const row=index===undefined?state[group]:state[group][Number(index)];
  row[key]=event.target.value;
+ if(group==='roster'&&key==='unit'){
+  const heading=event.target.closest('.row')?.querySelector('h3 a, h3');
+  const link=heading?.querySelector('a');
+  if(heading)(link||heading).textContent=unitLabel(row,Number(index));
+ }
+ if(group==='roster'&&['formation','unit'].includes(key))renderFormations();
  save();totals();
 });
+$('#resolveContract form[data-resolution]').addEventListener('submit',resolveContract);
 $('#panel').addEventListener('click',event=>{
  const button=event.target.closest('[data-action]');
  if(!button) return;
  const {action,group,index}=button.dataset;
+ const row=state.roster[Number(index)];
+ if(action==='link-unit'){
+  const roster=state.roster;
+  MechLibrary.pick(row.unit,(ref,title,bv)=>{
+   if(state.roster!==roster||!roster.includes(row))return;
+   row.sheet=ref;row.unit=title;if(bv!=='')row.bv=bv;
+   save();render();
+  });return;
+ }
+ if(action==='unlink-unit'){delete row.sheet;save();render();return;}
+ if(action==='view-unit-sheet'){event.preventDefault();MechLibrary.view(row.sheet);return;}
+ if(action==='formation-sheets'){
+  const formation=button.dataset.formation;
+  MechLibrary.formation(formation||'Unassigned',state.roster.filter(unit=>formationName(unit)===formation));return;
+ }
  if(action==='export'){exportBackup();return;}
+ if(action==='advance-month'){advanceMonth();return;}
+ if(action==='resolve-contract'){openResolution();return;}
  if(action==='sign-contract'){signContract();return;}
  if(action==='manual-terms'){
    if(confirm('Edit this contract as a manual entry? The offer’s negotiation limits will no longer apply.')){

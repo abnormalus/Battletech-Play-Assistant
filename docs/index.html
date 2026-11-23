@@ -19,6 +19,21 @@
 <p>Save stores each company in its own folder under <code>companies/</code>.</p>
 <h3>Local backups</h3><div class="actions"><label class="file-button">Open local backup<input id="companyXmlImport" type="file" accept=".xml,.json,application/xml,text/xml,application/json"></label>
 <button type="button" id="companyXmlExport">Download company XML</button><button type="button" id="companyPrevious">Download previous copy</button><button type="button" id="companyUnlink">Unlink company</button></div></dialog>
+<dialog id="resolveContract" aria-labelledby="resolveContractTitle">
+  <div class="section-head"><h2 id="resolveContractTitle">Resolve contract</h2><form method="dialog"><button>Cancel</button></form></div>
+  <p data-contract-name></p>
+  <form data-resolution>
+    <div class="fields">
+      <label>Outcome<select name="outcome" required><option>Completed</option><option>Failed</option><option>Terminated</option></select></label>
+      <label>Final payment SP<input name="paid" type="number" min="0" step="1" value="0"></label>
+      <label>Scrap proceeds SP<input name="scrap" type="number" min="0" step="1" value="0"></label>
+      <label>Reputation change<input name="rep" type="number" step="1" value="0"></label>
+    </div>
+    <label>Resolution notes<textarea name="notes" maxlength="12000"></textarea></label>
+    <p>Enter any final payment and scrap proceeds here. Monthly pay is recorded when you advance the campaign month.</p>
+    <div class="actions"><button class="primary" type="submit">Record resolution</button></div>
+  </form>
+</dialog>
 <dialog id="mechLibrary" aria-labelledby="mechLibraryTitle">
   <div class="section-head"><h2 id="mechLibraryTitle">Mech and vehicle lookup</h2><form method="dialog"><button>Close</button></form></div>
   <button type="button" id="mechConnect">Connect shared GitHub repository</button>
