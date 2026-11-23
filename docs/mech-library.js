@@ -4,6 +4,7 @@ const MechLibrary = (() => {
   const connect = dialog.querySelector('#mechConnect');
   let indexedRepository;
   let indexingRepository;
+  let indexingPromise;
   const query = dialog.querySelector('#mechQuery');
   const results = dialog.querySelector('#mechResults');
   const status = dialog.querySelector('#mechStatus');
@@ -105,7 +106,7 @@ const MechLibrary = (() => {
     controls.hidden = false;
     status.textContent = entries.length.toLocaleString() + ' files indexed from ' + source + '.';
     renderResults();
-    query.focus();
+    if (dialog.open) query.focus();
   }
 
   function table(headers, rows) {
@@ -199,6 +200,29 @@ const MechLibrary = (() => {
     }
   }
 
+  function nameMatches(name) {
+    const search = normalize(name);
+    if (!search) return [];
+    const terms = name.toLowerCase().match(/[a-z0-9]+/g) || [];
+    const matches = entries.filter(entry => entry.search.includes(search) || terms.every(term => entry.search.includes(term)));
+    const exact = matches.filter(entry => entry.search === search);
+    return [...exact, ...matches.filter(entry => entry.search !== search)];
+  }
+
+  async function searchRoster(name) {
+    if (!entries.length || sourceRepositoryId !== null) await indexGitHub();
+    const matches = nameMatches(name);
+    const exact = matches.filter(entry => entry.search === normalize(name));
+    return {exact:exact.length === 1 ? exact[0] : null, matches:matches.slice(0,8), total:matches.length, ready:entries.length > 0};
+  }
+
+  async function readRosterEntry(entry) {
+    const mech = parseUnit(await entry.read());
+    if (!entries.includes(entry)) throw Error('The unit library changed. Search again.');
+    return {ref:{path:entry.path,repoId:entry.repoId},title:[mech.getAttribute('name'),mech.getAttribute('model')].filter(Boolean).join(' ') || entry.label,
+      bv:mech.querySelector('battle_value')?.textContent.trim() || ''};
+  }
+
   function renderResults() {
     const search = normalize(query.value);
     results.replaceChildren();
@@ -206,7 +230,7 @@ const MechLibrary = (() => {
       results.append(node('p', 'Enter a mech or vehicle name or model number.'));
       return;
     }
-    const matches = entries.filter(entry => entry.search.includes(search));
+    const matches = nameMatches(query.value);
     results.append(node('p', matches.length ? 'Showing ' + Math.min(matches.length, 50) + ' of ' + matches.length + ' matches.' : 'No matching unit files.'));
     for (const entry of matches.slice(0, 50)) {
       const button = node('button', entry.label);
@@ -218,6 +242,15 @@ const MechLibrary = (() => {
   }
 
   async function indexGitHub() {
+    const repo = companyRepo;
+    if (repo && repo === indexingRepository && indexingPromise) return indexingPromise;
+    const pending = loadGitHubIndex();
+    indexingPromise = pending;
+    try { await pending; }
+    finally { if (indexingPromise === pending) indexingPromise = undefined; }
+  }
+
+  async function loadGitHubIndex() {
     const repo = companyRepo;
     connect.hidden = Boolean(repo);
     if (!repo || repo === indexedRepository || repo === indexingRepository) return;
@@ -263,6 +296,7 @@ const MechLibrary = (() => {
     zipInput.value = '';
     indexedRepository = undefined;
     indexingRepository = undefined;
+    indexingPromise = undefined;
     clearLibrary();
     const id = requestId;
     status.textContent = 'Reading the ZIP…';
@@ -277,6 +311,7 @@ const MechLibrary = (() => {
   window.addEventListener('company-repository-changed', () => {
     indexedRepository = undefined;
     indexingRepository = undefined;
+    indexingPromise = undefined;
     clearLibrary();
     status.textContent = '';
   });
@@ -364,5 +399,5 @@ const MechLibrary = (() => {
     pickUnit = undefined;
   });
   document.querySelector('#openMechLibrary').addEventListener('click', () => openLibrary());
-  return {pick:(name,choose) => openLibrary({name,choose}), view, formation};
+  return {pick:(name,choose) => openLibrary({name,choose}), view, formation, searchRoster, readRosterEntry};
 })();

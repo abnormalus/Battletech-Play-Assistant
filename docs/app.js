@@ -235,7 +235,8 @@ function control(group, [key,label,type='text'], index) {
  const value=esc(row[key]);
  const locked=group==='contract'&&state.draft&&['scale','base','baseSP','support','supportMode','transport','transportSP','salvage','salvageMode','command'].includes(key);
  const input=type==='textarea'?'<textarea '+data+' maxlength="12000">'+value+'</textarea>':'<input '+data+' type="'+type+'"'+(type==='number'?' step="any"':'')+' value="'+value+'"'+(locked?' readonly':'')+'>';
- return '<label>'+label+input+'</label>';
+ const field='<label>'+label+input+'</label>';
+ return group==='roster'&&key==='unit'?'<div>'+field+'<div class="roster-unit-matches" aria-live="polite"></div></div>':field;
 }
 const inputs = (group,index) => fields[group].map(field=>control(group,field,index)).join('');
 function totals() {
@@ -345,15 +346,100 @@ $('#tabs').addEventListener('click', event=>{
  const tab=event.target.closest('[data-tab]');
  if(tab){active=tab.dataset.tab;render();}
 });
+const rosterSearches=new WeakMap();
+function rosterNameInput(input) {
+ return input.matches('input[data-group="roster"][data-key="unit"]');
+}
+function saveRosterLink(row,ref,title,bv,input) {
+ if(!state.roster.includes(row))return;
+ const restoreFocus=document.activeElement===input;
+ row.sheet=ref;row.unit=title;
+ if(bv!=='')row.bv=bv;
+ save();render();
+ if(restoreFocus)$('[data-group="roster"][data-key="unit"][data-index="'+state.roster.indexOf(row)+'"]')?.focus();
+}
+function queueRosterSearch(input,autoLink=false) {
+ const row=state.roster[Number(input.dataset.index)];
+ const list=input.parentElement.nextElementSibling;
+ const name=input.value.trim();
+ const previous=rosterSearches.get(input);
+ if(autoLink&&previous?.name===name){
+  previous.autoLink=true;
+  if(previous.exact)previous.choose(previous.exact);
+  return;
+ }
+ clearTimeout(previous?.timer);
+ const search={name,autoLink};
+ rosterSearches.set(input,search);
+ const current=()=>input.isConnected&&rosterSearches.get(input)===search&&state.roster.includes(row)&&input.value.trim()===name&&!row.sheet;
+ list.replaceChildren();
+ if(!name||row.sheet)return;
+ async function choose(entry) {
+  if(!current()||search.selecting)return;
+  search.selecting=true;
+  try {
+   const {ref,title,bv}=await MechLibrary.readRosterEntry(entry);
+   if(current())saveRosterLink(row,ref,title,bv,input);
+  } catch(error) {
+   if(current())list.textContent=error.message;
+  } finally {search.selecting=false;}
+ }
+ search.choose=choose;
+ search.timer=setTimeout(async ()=>{
+  try {
+   const {exact,matches,total,ready}=await MechLibrary.searchRoster(name);
+   if(!current())return;
+   search.exact=exact;
+   if(search.autoLink&&exact){await choose(exact);return;}
+   if(!ready){
+    list.textContent='Connect GitHub or load a local ZIP in Mech lookup to search.';
+    return;
+   }
+   if(!matches.length){list.textContent='No matching unit sheets.';return;}
+   const picker=document.createElement('div');
+   picker.className='actions';
+   for(const entry of matches){
+    const button=document.createElement('button');
+    button.type='button';
+    const duplicated=matches.some(other=>other!==entry&&other.label===entry.label);
+    button.textContent=duplicated?entry.label+' · '+entry.path.split('/').slice(0,-1).join('/'):entry.label;
+    button.title=entry.path;
+    button.addEventListener('click',()=>choose(entry));
+    picker.append(button);
+   }
+   list.append(picker);
+   if(total>matches.length){
+    const hint=document.createElement('small');
+    hint.textContent=total+' matches. Keep typing or open the full picker.';
+    list.append(hint);
+   }
+  } catch(error) {
+   if(current())list.textContent=error.message;
+  }
+ },autoLink?0:180);
+}
+$('#panel').addEventListener('keydown',event=>{
+ if(event.key==='Enter'&&rosterNameInput(event.target)){
+  event.preventDefault();queueRosterSearch(event.target,true);
+ }
+});
 $('#panel').addEventListener('input',event=>{
  const {group,key,index}=event.target.dataset;
  if(!group || !key) return;
  const row=index===undefined?state[group]:state[group][Number(index)];
+ const previousValue=row[key];
  row[key]=event.target.value;
  if(group==='roster'&&key==='unit'){
-  const heading=event.target.closest('.row')?.querySelector('h3 a, h3');
-  const link=heading?.querySelector('a');
-  if(heading)(link||heading).textContent=unitLabel(row,Number(index));
+  const container=event.target.closest('.row');
+  if(row.sheet&&row.unit.trim()!==(previousValue||'').trim()){
+   delete row.sheet;
+   row.bv='';
+   container.querySelector('input[data-key="bv"]').value='';
+   container.querySelector('[data-action="unlink-unit"]')?.remove();
+   container.querySelector('[data-action="link-unit"]').textContent='Link unit sheet';
+  }
+  container.querySelector('h3').innerHTML=unitLink(row,Number(index));
+  queueRosterSearch(event.target);
  }
  if(group==='roster'&&['formation','unit'].includes(key))renderFormations();
  save();totals();
@@ -368,8 +454,7 @@ $('#panel').addEventListener('click',event=>{
   const roster=state.roster;
   MechLibrary.pick(row.unit,(ref,title,bv)=>{
    if(state.roster!==roster||!roster.includes(row))return;
-   row.sheet=ref;row.unit=title;if(bv!=='')row.bv=bv;
-   save();render();
+   saveRosterLink(row,ref,title,bv);
   });return;
  }
  if(action==='unlink-unit'){delete row.sheet;save();render();return;}
@@ -408,6 +493,7 @@ $('#panel').addEventListener('click',event=>{
  if(action==='add') $('[data-group="'+group+'"][data-index="'+(state[group].length-1)+'"]')?.focus();
 });
 $('#panel').addEventListener('change',async event=>{
+ if(rosterNameInput(event.target))queueRosterSearch(event.target,true);
  const term=event.target.dataset.negotiation;
  if(term&&state.draft){
    const steps=validSteps({...state.draft.steps,[term]:Number(event.target.value)});

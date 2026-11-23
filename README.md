@@ -16,7 +16,7 @@ Set the current system, Force Scale, travel mix and travel cost method, then pub
 
 On the **Contract sheet** or **MSRB History**, advance one month to post upkeep of 500 SP per Force Scale and collect monthly pay while a signed contract is active. **Resolve contract** records the outcome, final payment, scrap proceeds, and reputation change, then ends monthly contract pay.
 
-On the **Force sheet**, use **Link unit sheet** to fill in the unit name and BV from the library. Record a scrap value on each roster entry. Formation lists link to individual sheets, and **View formation sheets** opens all linked sheets with a print option.
+On the **Force sheet**, type in **Unit / variant** to search the library. Choose a result or press Enter to auto-link a unique exact name. Linking fills in the unit name and BV. **Link unit sheet** opens the full picker. Record a scrap value on each roster entry. Formation lists link to individual sheets, and **View formation sheets** opens all linked sheets with a print option.
 
 ## Private GitHub sync
 
