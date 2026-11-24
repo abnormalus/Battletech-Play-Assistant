@@ -156,21 +156,25 @@ const MechLibrary = (() => {
       reset();attach.hidden=true;
       status.textContent=file&&repo?'Saving the Classic PDF template to GitHub…':'Preparing Classic record sheet…';
       try{
-        const template=file?await ClassicRecordPDF.attach(file,repo):await ClassicRecordPDF.template(repo);
+        if(file)await ClassicRecordPDF.attach(file,repo);
         if(!current())return;
-        if(!template){
-          attach.hidden=false;
-          status.textContent=repo?'This library has no Classic PDF template yet. Attach it once to share it with everyone.':'Attach the Classic PDF template for this device.';
-          return;
-        }
-        const result=await generate(template);
+        const templateFor=async data=>{
+          const template=await ClassicRecordPDF.templateFor(repo,data);
+          if(!template){
+            const error=Error(repo?'This library has no Classic PDF template yet. Attach it once to share it with everyone.':'Attach the Classic PDF template for this device.');
+            error.missingTemplate=true;
+            throw error;
+          }
+          return template;
+        };
+        const result=await generate(templateFor);
         if(!current())return;
         url=URL.createObjectURL(result.pdf);frame.src=url;link.href=url;
         frame.hidden=false;link.hidden=false;status.textContent=result.note||'';
       }catch(error){
         if(current()){
           status.textContent=error.message;
-          if(file)attach.hidden=false;
+          if(file||error.missingTemplate)attach.hidden=false;
         }
       }
     }
@@ -193,9 +197,9 @@ const MechLibrary = (() => {
       if(!active())return;
       const toolbar=node('div','');toolbar.className='actions sheet-toolbar';
       let details=unitDetails(unit,configuration);
-      const viewer=classicViewer(toolbar,entry.label,async template=>{
-        const selected=details;
-        return {pdf:await ClassicRecordPDF.fill(template,unit,selected,BattleTechSheetData.decode(unit,selected,pilot),pilot)};
+      const viewer=classicViewer(toolbar,entry.label,async templateFor=>{
+        const selected=details,data=BattleTechSheetData.decode(unit,selected,pilot);
+        return {pdf:await ClassicRecordPDF.fill(await templateFor(data),unit,selected,data,pilot)};
       },active);
       if(details.alternatives.length){
         const label=node('label','Configuration');
@@ -482,7 +486,7 @@ const MechLibrary = (() => {
     const toolbar=node('div','');toolbar.className='actions sheet-toolbar';
     const title=name+' formation sheets';
     toolbar.append(node('strong',title));
-    const viewer=classicViewer(toolbar,title,async template=>{
+    const viewer=classicViewer(toolbar,title,async templateFor=>{
       const files=[],skipped=[],loaded=new Map();
       for(const [index,unit] of units.entries()){
         if(!active())throw Error('The formation viewer was closed.');
@@ -491,8 +495,9 @@ const MechLibrary = (() => {
           if(!entry)throw Error('Design unavailable.');
           if(!loaded.has(entry))loaded.set(entry,parseUnit(await entry.read()));
           const design=loaded.get(entry),details=unitDetails(design,unit.config);
-          files.push(await ClassicRecordPDF.fill(template,design,details,BattleTechSheetData.decode(design,details,unit.pilot),unit.pilot));
-        }catch{skipped.push(unit.unit||'Unit '+(index+1));}
+          const data=BattleTechSheetData.decode(design,details,unit.pilot);
+          files.push(await ClassicRecordPDF.fill(await templateFor(data),design,details,data,unit.pilot));
+        }catch(error){if(error.missingTemplate)throw error;skipped.push(unit.unit||'Unit '+(index+1));}
       }
       if(!files.length)throw Error('No Classic sheets available for this formation.');
       return {pdf:await ClassicRecordPDF.combine(files),note:skipped.length?'Sheets unavailable for '+skipped.join(', ')+'.':''};

@@ -98,6 +98,15 @@ const ClassicRecordPDF=(()=>{
     }
     return new Blob([await merged.save()],{type:'application/pdf'});
   }
+  let builtIn;
+  async function templateFor(repo,data){
+    if(chooseLayout(data)!==layouts.ground)return template(repo);
+    if(!builtIn)builtIn=fetch('./ground-vehicle-template.pdf').then(response=>{
+      if(!response.ok)throw Error('Could not load the built-in ground vehicle template.');
+      return response.blob();
+    }).catch(error=>{builtIn=undefined;throw error;});
+    return builtIn;
+  }
   function chooseLayout(data){
     if(data.vehicle){
       if(/vtol/i.test(data.motive))return layouts.vtol;
@@ -114,7 +123,7 @@ const ClassicRecordPDF=(()=>{
     const template=await lib.PDFDocument.load(await file.arrayBuffer());
     const document=await lib.PDFDocument.create();
     const layout=chooseLayout(data);
-    const [page]=await document.copyPages(template,[layout.index]);
+    const [page]=await document.copyPages(template,[layout===layouts.ground?0:layout.index]);
     document.addPage(page);
     const font=await document.embedFont(lib.StandardFonts.Helvetica);
     const color=lib.rgb(0.08,0.08,0.08);
@@ -145,8 +154,30 @@ const ClassicRecordPDF=(()=>{
     if(/clan/i.test(details.tech))put(220,155,'X',8,7);
     if(/inner sphere/i.test(details.tech))put(220,166,'X',8,7);
     const used=new Set();
+    const armorRegions={
+      Front:[455,89,512,142],Left:[426,182,445,267],Right:[524,182,542,267],
+      Rear:[443,289,531,305],Turret:[464,225,502,265],'Second turret':[469,151,501,163]
+    };
+    function armorPips(location,count){
+      const region=armorRegions[location];
+      if(!region||!Number.isInteger(count)||count<1)return;
+      const [x1,y1,x2,y2]=region;
+      const width=x2-x1,height=y2-y1;
+      const columns=Math.min(count,Math.max(1,Math.ceil(Math.sqrt(count*width/height))));
+      const rows=Math.ceil(count/columns);
+      const space=Math.min(width/columns,height/rows,6);
+      for(let row=0;row<rows;row++){
+        const rowCount=Math.min(columns,count-row*columns);
+        for(let column=0;column<rowCount;column++){
+          page.drawCircle({x:(x1+x2)/2+(column-(rowCount-1)/2)*space,
+            y:page.getHeight()-((y1+y2)/2+(row-(rows-1)/2)*space),
+            size:space*.36,borderWidth:Math.min(.55,space*.13),borderColor:color});
+        }
+      }
+    }
     const keyFor=location=>({Head:0,'Center torso':1,'Center torso rear':2,'Left torso':3,'Left torso rear':4,'Right torso':5,'Right torso rear':6,'Left arm':7,'Right arm':8,'Left leg':9,'Right leg':10,'Front left leg':7,'Front right leg':8,'Rear left leg':9,'Rear right leg':10,Front:0,Left:1,Right:2,Rear:3,Turret:4,'Second turret':5,Rotor:6}[location.label]);
     for(const location of data.locations){
+      if(layout===layouts.ground)armorPips(location.label,location.armor);
       const point=layout.armor[keyFor(location)];
       if(point&&location.armor!==undefined){
         const formatted=String(location.armor);
@@ -198,5 +229,5 @@ const ClassicRecordPDF=(()=>{
     }
     return new Blob([await document.save()],{type:'application/pdf'});
   }
-  return {attach,template,fill,combine};
+  return {attach,templateFor,fill,combine};
 })();
