@@ -486,7 +486,25 @@ const MechLibrary = (() => {
     const box=node('section','');
     box.className='sheet';
     box.append(node('h3','Add this design'));
-    const label=node('label','Upload a Solaris Skunk Werks or Solaris Armor Werks design');
+    const repo=companyRepo;
+    if(!repo){
+      box.append(node('p','Connect GitHub to add designs to the shared library.'));
+      const connectButton=node('button','Connect GitHub');
+      connectButton.type='button';
+      connectButton.addEventListener('click',()=>{
+        const githubDialog=document.querySelector('#githubDialog');
+        githubDialog.addEventListener('close',()=>{
+          if(companyRepo)showAddDesign(name,choose);
+        },{once:true});
+        dialog.close();
+        showGitHubDialog();
+      });
+      box.append(connectButton);
+      sheet.replaceChildren(box);status.textContent='';
+      return;
+    }
+    box.append(node('p','Attaching a design saves it to '+repo.name+' and adds it to the shared library.'));
+    const label=node('label','Attach a Solaris Skunk Werks or Solaris Armor Werks design');
     const input=node('input','');
     input.type='file';input.accept='.ssw,.saw';label.append(input);box.append(label);
     sheet.replaceChildren(box);status.textContent='';
@@ -503,21 +521,34 @@ const MechLibrary = (() => {
         if(!details.title)throw Error('The design is missing its name.');
         const ext=unit.localName==='mech'?'.ssw':'.saw';
         const filename=details.title.replace(/[^\p{L}\p{N} .()_-]/gu,'_').slice(0,120)+ext;
-        const path='designs/'+crypto.randomUUID()+'/'+filename;
-        const repo=companyRepo;
+        const bytes=new TextEncoder().encode(xml);
+        const fingerprint=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))]
+          .map(byte=>byte.toString(16).padStart(2,'0')).join('');
+        const path='designs/'+fingerprint+'/'+filename;
+        const location='/contents/'+repo.path(path);
+        const content=CompanyXML.toBase64(bytes);
         if(id!==requestId||!dialog.open)return;
-        if(repo){
-          await repo.api('/contents/'+repo.path(path),{method:'PUT',body:JSON.stringify({
-            branch:repo.branch,message:'Add custom BattleTech design',content:CompanyXML.toBase64(new TextEncoder().encode(xml))
+        if(repo!==companyRepo)throw Error('The GitHub connection changed. Reopen Add this design and try again.');
+        status.textContent='Saving design to '+repo.name+'…';
+        let saved;
+        try{
+          const result=await repo.api(location,{method:'PUT',body:JSON.stringify({
+            branch:repo.branch,message:'Add custom BattleTech design',content
           })});
-        }else{
-          localStorage.setItem(customKey,JSON.stringify({...readLocalDesigns(),[path]:xml}));
+          saved=result.content;
+        }catch(error){
+          if(![409,422].includes(error.status))throw error;
+          try{saved=await repo.api(location+'?ref='+encodeURIComponent(repo.branch));}
+          catch{throw error;}
+          if(saved.encoding!=='base64'||saved.content.replace(/\s/g,'')!==content)throw error;
         }
-        if(id!==requestId||!dialog.open)return;
-        const entry={path,label:details.title,repoId:repo?.id??null,search:normalize(details.title),read:async()=>xml};
-        entries.push(entry);
+        if(!saved?.sha)throw Error('GitHub did not confirm the saved design. Attach the file again to retry.');
+        if(id!==requestId||!dialog.open||repo!==companyRepo)return;
+        const entry={path,label:details.title,repoId:repo.id,search:normalize(details.title),read:async()=>xml};
+        if(!entries.some(item=>item.path===path&&item.repoId===repo.id))entries.push(entry);
         pickUnit=choose;
-        await openEntry(entry);
+        await openEntry(entries.find(item=>item.path===path&&item.repoId===repo.id));
+        if(dialog.open&&repo===companyRepo)status.textContent='Design saved to '+repo.name+'.';
       }catch(error){if(id===requestId)status.textContent=error.message;}
       finally{input.disabled=false;input.value='';}
     });
