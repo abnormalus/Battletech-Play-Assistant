@@ -148,7 +148,7 @@ const BattleTechSheetData=(()=>{
         if(!name)continue;
         const placement=readSlots(component,name);
         if(component.localName==='equipment')items.push({name,type:value(component,'type'),placement,
-          shots:num(value(component,'shots')||attr(component,'shots'))});
+          shots:num(value(component,'shots')||attr(component,'shots')),tons:num(value(component,'tons')||value(component,'tonnage')||attr(component,'tons'))});
       }
     }
     if(!vehicle){
@@ -164,5 +164,62 @@ const BattleTechSheetData=(()=>{
       movement:speeds(unit,base,loadout,vehicle,tons,drive,armor),items,criticals,
       adjustedBV:factor!==undefined&&bv!==undefined?Math.round(factor*bv):undefined};
   }
-  return {decode};
+  const ac={2:45,5:20,10:10,20:5};
+  const missile={lrm:{5:24,10:12,15:8,20:6},srm:{2:50,4:25,6:15},mrm:{10:24,20:12,30:8,40:6},atm:{3:20,6:10,9:7,12:5}};
+  const mml={3:[40,33],5:[24,20],7:[17,14],9:[13,11]};
+  const fixed={'gauss rifle':8,'light gauss rifle':16,'heavy gauss rifle':4,'improved heavy gauss rifle':4,
+    'silver bullet gauss rifle':8,'ap gauss rifle':40,'hag 20':6,'hag 30':4,'hag 40':3,
+    'machine gun':200,'light machine gun':200,'heavy machine gun':100,'arrow iv':5,'long tom':5,
+    'sniper':10,'thumper':20,'long tom cannon':5,'sniper cannon':10,'thumper cannon':20,
+    'narc missile beacon':6,'improved narc launcher':4,'vehicle flamer':20,'heavy flamer':10,
+    'light rifle':18,'medium rifle':9,'heavy rifle':6};
+  function identity(name){
+    const tech=name.match(/^\s*\((CL|IS)\)/i)?.[1].toUpperCase()||'';
+    const clean=name.replace(/^\s*\((?:CL|IS|R)\)\s*/ig,'').replace(/^\s*\((?:CL|IS|R)\)\s*/ig,'').replace(/^\s*@\s*/,'').trim();
+    let key=clean.toLowerCase().replace(/\s*\([^)]*\)/g,'').replace(/[-/]/g,' ').replace(/\s+/g,' ').trim();
+    key=key.replace(/^([ulr])ac /,(_,prefix)=>({u:'ultra ac',l:'lb ac',r:'rotary ac'}[prefix])+' ')
+      .replace(/^lb (\d+) x ac$/,'lb ac $1').replace(/^lb x ac (\d+)$/,'lb ac $1')
+      .replace(/^(?:ams|anti missile system)$/,'anti missile system').replace(/^i\s*narc(?: launcher)?$/,'improved narc launcher')
+      .replace(/^narc(?: launcher)?$/,'narc missile beacon');
+    return {key,tech,clean};
+  }
+  function capacity(id,name){
+    const acMatch=id.key.match(/^(?:(?:ultra|rotary|lb|light) )?ac (2|5|10|20)$/);
+    if(acMatch&&!id.key.startsWith('light '))return ac[acMatch[1]];
+    const missileMatch=id.key.match(/^(?:streak )?(lrm|srm|mrm|atm) (\d+)$/);
+    if(missileMatch)return missile[missileMatch[1]][missileMatch[2]];
+    const mmlMatch=id.key.match(/^mml (\d+)$/);
+    if(mmlMatch&&mml[mmlMatch[1]]){
+      if(/\blrm\b/i.test(name))return mml[mmlMatch[1]][0];
+      if(/\bsrm\b/i.test(name))return mml[mmlMatch[1]][1];
+      return undefined;
+    }
+    if(id.key==='anti missile system')return id.tech==='CL'?24:id.tech==='IS'?12:undefined;
+    return Object.hasOwn(fixed,id.key)?fixed[id.key]:undefined;
+  }
+  function isAmmo(item){return /^ammunition$/i.test(item.type)||/^\s*(?:\((?:CL|IS)\)\s*)?@/i.test(item.name);}
+  function ammoTracks(items){
+    const weapons=items.filter(item=>!isAmmo(item)).map(item=>identity(item.name));
+    const tracks=new Map();
+    for(const item of items.filter(isAmmo)){
+      const id=identity(item.name);
+      const variant=[...id.clean.matchAll(/\(([^)]+)\)/g)].map(match=>match[1].trim())
+        .filter(value=>!/^(?:half.?ton|1\/2(?: ton)?|0\.5(?: ton)?|artemis.*(?:compatible|capable))$/i.test(value));
+      const key=JSON.stringify([id.key,id.tech,variant.map(s=>s.toLowerCase())]);
+      const count=weapons.filter(weapon=>weapon.key===id.key&&(!id.tech||!weapon.tech||id.tech===weapon.tech)).length;
+      const base=capacity(id,item.name);
+      const weight=item.tons??(/\b(?:half[- ]?ton|1\/2(?: ton)?|0\.5(?: ton)?)\b/i.test(item.name)?.5:1);
+      const shots=item.shots??(base===undefined?undefined:Math.floor(base*weight));
+      const label=id.clean.replace(/\s*\((?:half.?ton|1\/2(?: ton)?|0\.5(?: ton)?|artemis.*(?:compatible|capable))\)/ig,'').trim();
+      if(!tracks.has(key))tracks.set(key,{name:label,weapons:count,shots:0,unknown:0});
+      const track=tracks.get(key);
+      if(Number.isSafeInteger(shots)&&shots>=0)track.shots+=shots;
+      else track.unknown++;
+    }
+    return Array.from(tracks.values(),track=>{
+      const perRound=track.weapons||1;
+      return {...track,rounds:Math.floor(track.shots/perRound),remaining:track.shots%perRound};
+    });
+  }
+  return {decode,isAmmo,ammoTracks};
 })();

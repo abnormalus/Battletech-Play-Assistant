@@ -213,19 +213,40 @@ const ClassicRecordPDF=(()=>{
       }
     }
     const grouped=new Map();
-    for(const item of data.items){
+    for(const item of data.items.filter(item=>!BattleTechSheetData.isAmmo(item))){
       const placement=[...new Set(item.placement)].join('/');
       const key=JSON.stringify([item.name,placement,item.shots]);
       if(!grouped.has(key))grouped.set(key,{...item,placement,quantity:0});
       grouped.get(key).quantity++;
     }
     const items=[...grouped.values()];
+    const tracks=BattleTechSheetData.ammoTracks(data.items);
+    if(tracks.reduce((sum,track)=>sum+track.rounds+track.remaining,0)>50_000)throw Error('This design has too many ammunition bubbles to print.');
+    const ammoLines=[];
+    if(tracks.length)ammoLines.push({label:'AMMUNITION TRACKER'});
+    for(const track of tracks){
+      const firing=track.weapons?track.weapons+' weapon'+(track.weapons===1?'':'s'):'unassigned';
+      const unknown=track.unknown?' + '+track.unknown+' unknown bin'+(track.unknown===1?'':'s'):'';
+      ammoLines.push({label:track.name+' / '+firing+' / '+track.shots+' shots'+unknown});
+      function queuePips(count,label){
+        for(let offset=0;offset<count;offset+=24)ammoLines.push({label:offset===0?label:'',pips:Math.min(24,count-offset)});
+      }
+      queuePips(track.rounds,track.weapons>1?'Volleys':'Shots');
+      queuePips(track.remaining,'Spare shots');
+    }
+    const printedAmmo=Math.min(6,ammoLines.length);
+    const weaponRows=layout.rows-printedAmmo;
     let index=0;
-    for(const item of items.slice(0,layout.rows)){
+    for(const item of items.slice(0,weaponRows)){
       const y=layout.rowsY+index++*10.8;
       put(45,y,item.quantity,12,6);put(59,y,item.name,58,6);put(120,y,item.placement,27,6);
     }
     const extra=[];
+    function drawAmmoLine(target,x,y,line){
+      write(target,x,y,line.label,line.pips?58:197,line.pips?6:7);
+      for(let i=0;i<(line.pips||0);i++)target.drawCircle({x:x+61+i*5.6,y:target.getHeight()-y+2,size:1.9,borderWidth:.55,borderColor:color});
+    }
+    ammoLines.slice(0,printedAmmo).forEach((line,index)=>drawAmmoLine(page,44,layout.rowsY+(weaponRows+index)*10.8,line));
     for(const slot of data.criticals){
       const target=layout.critical?.[slot.code];
       const preprinted=slot.code==='HD'?slot.slot!==3:slot.code==='CT'?slot.slot<9:
@@ -235,7 +256,7 @@ const ClassicRecordPDF=(()=>{
         put(target[0],target[1][slot.slot],slot.name,71,5.5);used.add(key);
       }else if(!data.vehicle)extra.push(slot.code+' '+(slot.slot+1)+'  '+slot.name);
     }
-    const overflow=[...items.slice(layout.rows).map(item=>item.quantity+' × '+item.name+'  '+item.placement),...extra];
+    const overflow=[...items.slice(weaponRows).map(item=>item.quantity+' × '+item.name+'  '+item.placement),...extra];
     if(crew?.special)overflow.push('Special pilot abilities: '+crew.special);
     if(crew?.damage||crew?.repair)overflow.push('Damage / repairs: '+[crew.damage,crew.repair].filter(Boolean).join(' / '));
     if(data.vehicle){
@@ -244,6 +265,11 @@ const ClassicRecordPDF=(()=>{
         if(!layout.armor[at]&&location.armor!==undefined)overflow.push(location.label+' armor: '+location.armor);
         if(location.internal!==undefined)overflow.push(location.label+' structure: '+location.internal);
       }
+    }
+    for(let i=printedAmmo;i<ammoLines.length;i+=42){
+      const continuation=document.addPage([612,765]);
+      write(continuation,45,58,title+' - Ammunition tracker',520,15);
+      ammoLines.slice(i,i+42).forEach((line,offset)=>drawAmmoLine(continuation,45,88+offset*14,line));
     }
     for(let i=0;i<overflow.length;i+=45){
       const supplement=document.addPage([612,765]);
