@@ -248,6 +248,48 @@ const MechLibrary = (() => {
       const toolbar=node('div','');toolbar.className='actions sheet-toolbar';
       toolbar.append(printButton('Print / Save as PDF'));
       let details=showMech(unit,drawing,configuration,pilot);
+      const pdfAction=node('button','Classic PDF');
+      pdfAction.type='button';
+      const templateInput=node('input','');
+      templateInput.type='file';templateInput.accept='.pdf,application/pdf';templateInput.hidden=true;
+      const pdfLink=node('a','Open filled PDF');pdfLink.hidden=true;pdfLink.target='_blank';pdfLink.rel='noopener';
+      let pdfUrl;
+      function resetPdf(){
+        if(pdfUrl)URL.revokeObjectURL(pdfUrl);
+        pdfUrl=undefined;pdfLink.hidden=true;pdfLink.removeAttribute('href');
+      }
+      dialog.addEventListener('close',resetPdf,{once:true});
+      async function generateClassicPDF(template){
+        const configuration=details.config;
+        const blob=await ClassicRecordPDF.fill(template,unit,details,BattleTechSheetData.decode(unit,details,pilot),pilot);
+        if(id!==requestId||!dialog.open||configuration!==details.config)return;
+        resetPdf();
+        pdfUrl=URL.createObjectURL(blob);pdfLink.href=pdfUrl;pdfLink.hidden=false;
+        pdfLink.focus();status.textContent='Classic PDF ready.';
+      }
+      function onPdfError(error){if(id===requestId)status.textContent=error.message;}
+      pdfAction.addEventListener('click',async()=>{
+        pdfAction.disabled=true;
+        try{
+          const template=await ClassicRecordPDF.template();
+          if(id!==requestId||!dialog.open)return;
+          if(template)await generateClassicPDF(template);
+          else{
+            status.textContent='Choose the E-CAT35001RS blank record sheets PDF to keep on this device.';
+            templateInput.click();
+          }
+        }catch(error){onPdfError(error);}
+        finally{pdfAction.disabled=false;}
+      });
+      templateInput.addEventListener('change',async()=>{
+        const file=templateInput.files[0];
+        if(!file)return;
+        pdfAction.disabled=true;
+        try{await ClassicRecordPDF.attach(file);await generateClassicPDF(file);}
+        catch(error){onPdfError(error);}
+        finally{pdfAction.disabled=false;templateInput.value='';}
+      });
+      toolbar.append(pdfAction,templateInput,pdfLink);
       if(details.alternatives.length){
         const label=node('label','Configuration');
         const selection=node('select','');
@@ -257,6 +299,7 @@ const MechLibrary = (() => {
         }
         selection.value=details.config;
         selection.addEventListener('change',()=>{
+          resetPdf();
           details=showMech(unit,drawing,selection.value,pilot);
           onChange?.(details);
         });
