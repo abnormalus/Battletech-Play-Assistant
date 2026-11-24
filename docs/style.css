@@ -31,3 +31,36 @@ dialog::backdrop{background:#061012b8}dialog h3{margin-top:1rem}.inline-check{di
 .roster-unit-matches{font-size:.85rem;color:var(--muted)}
 .roster-unit-matches:not(:empty){margin-top:.45rem}
 .roster-unit-matches .actions{gap:.35rem}
+
+.save-split{display:flex;align-items:center;gap:2px;position:relative}
+#saveMenu summary{min-height:42px;padding:.52rem;border:1px solid var(--line);border-radius:6px;cursor:pointer;list-style:none}
+#companySaveAs{position:absolute;right:0;top:calc(100% + 2px);white-space:nowrap;z-index:3}
+#saveAsForm label,#githubDialog .fields{margin-bottom:.8rem}
+#forceAdvances{font-size:1.25rem;font-weight:650;color:var(--ink);padding:.32rem}
+#formationForm{align-items:end}
+#mechLibrary[data-mode="sheet"] #mechConnect,#mechLibrary[data-mode="sheet"] #mechSearch,#mechLibrary[data-mode="sheet"] #mechZipChoice{display:none}
+#mechLibrary[data-mode="sheet"]{width:min(100% - 1.5rem,960px)}
+.bt-record{background:#faf8f2;color:#211e1a;font-family:system-ui,sans-serif;border:2px solid #2e2923;padding:clamp(.55rem,2vw,1.2rem);margin-top:.7rem}
+.bt-record header{display:block;background:#292621;color:#fff;padding:.65rem 1rem;margin:0 0 .7rem;max-width:none;border-left:8px solid #ad733f}
+.bt-record header h3{font-size:clamp(1.3rem,4vw,2rem);margin:.2rem 0}
+.bt-record header p{color:#fff;margin:0}
+.record-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem}
+.record-grid section{min-width:0;border:1px solid #847e72}
+.record-grid h4{background:#e3dbcd;margin:0!important;padding:.3rem .45rem;text-transform:uppercase;font-size:.9rem;letter-spacing:.025em}
+.record-grid p{margin:0;padding:.35rem;color:#211e1a!important}
+#mechSheet .record-grid table{font-size:.78rem}
+#mechSheet .record-grid th,#mechSheet .record-grid td{border-color:#c6bcab;padding:.2rem .35rem;overflow-wrap:anywhere}
+#mechSheet .armor-track button{display:inline-block;min-height:0;width:.56rem;height:.56rem;border:1px solid #514a40;border-radius:50%;padding:0;margin:.07rem;background:transparent;vertical-align:middle}
+#mechSheet .armor-track button[aria-pressed="true"]{background:#28221d}
+.sheet-toolbar{margin-bottom:.5rem}
+@media(max-width:620px){.record-grid{grid-template-columns:1fr}}
+@media print{
+ .bt-record{border:1px solid #333;padding:.5rem;margin:0}
+ .bt-record header{color:#111;background:white;border-left:4px solid #333}
+ #mechSheet .bt-record header p{color:#111}
+ #mechSheet .sheet-toolbar{display:none}
+ .record-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .record-grid h4{border-bottom:1px solid #888}
+ .record-grid section{break-inside:avoid}
+ #mechSheet .armor-track button{print-color-adjust:exact}
+}

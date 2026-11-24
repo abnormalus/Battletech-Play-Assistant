@@ -1,3 +1,12 @@
+function companyFinances(model){
+ const number=value=>Number.isFinite(Number(value))?Number(value):0;
+ const start=number(model.contract?.starting);
+ const ledger=model.ledger||[];
+ const currentSP=ledger.reduce((total,row)=>total+number(row.cover)+number(row.paid)-number(row.cost),start);
+ const reputation=ledger.reduce((total,row)=>total+number(row.rep),number(model.contract?.reputation));
+ const scale=Math.max(1,Math.floor(number(model.force?.scale)||number(model.history?.findLast(entry=>!entry.resolution)?.contract.scale)||1));
+ return {startingSP:start,currentSP,reputation,scale,monthlyUpkeepSP:scale*500};
+}
 
 const CompanyXML=(()=>{
  const MAX_BYTES=750000;
@@ -19,7 +28,8 @@ const CompanyXML=(()=>{
    else if(type!=='null')node.textContent=String(value);
    parent.append(node);
   }
-  add(root,null,model);
+  const {pilots,roster,ledger,...rest}=model;
+  add(root,null,{...rest,pilotRoster:pilots,vehicleRoster:roster,financialLedger:ledger,companyFinances:companyFinances(model)});
   const bytes=encode.encode('<?xml version="1.0" encoding="UTF-8"?>\n'+new XMLSerializer().serializeToString(doc));
   if(bytes.length>MAX_BYTES)throw Error('Company XML exceeds 750 KB. Export a JSON backup to keep this copy.');
   return bytes;
@@ -74,7 +84,7 @@ class PrivateCompanyRepository {
   if(!response.ok){
    const messages={401:'GitHub session expired. Connect again.',403:'GitHub denied access. Check repository and token permissions.',409:'The GitHub copy changed. Local edits are safe.',422:'GitHub rejected the update. Check the branch or reload the company.'};
    const error=Error(messages[response.status]||'GitHub request failed ('+response.status+'). The local company is safe.');
-   error.status=response.status;throw error;
+   error.status=response.status;if(response.status===401)this.onUnauthorized?.();throw error;
   }
   return response.json();
  }
@@ -95,7 +105,7 @@ class PrivateCompanyRepository {
    const match=item.type==='blob'&&/^([^/]+)\/company\.xml$/i.exec(item.path);
    if(!match)return [];
    const folder=match[1];
-   const name=folder.replace(/-[a-f0-9]{8}$/i,'').replace(/[-_]+/g,' ')||folder;
+   const name=folder;
    return [{path:'companies/'+item.path,name,folder}];
   }).sort((a,b)=>a.name.localeCompare(b.name)||a.folder.localeCompare(b.folder));
  }

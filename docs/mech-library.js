@@ -16,6 +16,9 @@ const MechLibrary = (() => {
   let entries = [];
   let requestId = 0;
   let pickUnit;
+  let mode='lookup';
+  const customKey='mercenaries-custom-designs-v1';
+  const field=(parent,key)=>parent?.querySelector(key)?.textContent.trim()||'';
   let initialQuery = '';
   let sourceRepositoryId = null;
 
@@ -94,11 +97,11 @@ const MechLibrary = (() => {
   }
 
   function installLibrary(files, source, repoId = null) {
-    if (!files.length) throw Error('No .ssw or .saw unit files were found in this source.');
     sourceRepositoryId = repoId;
+    files=[...files,...localDesigns()];
     entries = files.map(entry => ({
       ...entry,
-      repoId,
+      repoId:entry.local?null:repoId,
       label: filename(entry.path).replace(/\.(?:ssw|saw)$/i, ''),
       search: normalize(filename(entry.path).replace(/\.(?:ssw|saw)$/i, ''))
     })).sort((a, b) => a.label.localeCompare(b.label));
@@ -134,35 +137,78 @@ const MechLibrary = (() => {
     return mech;
   }
 
-  function showMech(mech, target) {
-    const field = (parent, key) => parent.querySelector(key)?.textContent.trim() || '';
-    const title = [mech.getAttribute('name'), mech.getAttribute('model')].filter(Boolean).join(' ');
-    const motive = mech.querySelector('motive');
-    const stats = [motive?.getAttribute('type') || field(mech, 'motive_type'),mech.getAttribute('tons') && mech.getAttribute('tons') + ' tons',
-      field(mech, 'battle_value') && 'BV ' + field(mech, 'battle_value'),
-      field(mech, 'year'), field(mech, 'techbase')].filter(Boolean).join(' · ');
-    const heading = node('h3', title);
-    heading.tabIndex = -1;
-    target.replaceChildren(heading, node('p', stats), node('p', field(mech, 'baseloadout > info')));
+  function unitDetails(unit, configuration) {
+    const alternatives=[...unit.querySelectorAll(':scope > loadout')];
+    const selected=alternatives.find(item=>item.getAttribute('name')===configuration)||
+      alternatives.find(item=>/^prime$/i.test(item.getAttribute('name')))||alternatives[0];
+    const tech=field(unit,':scope > techbase');
+    const tons=Number(unit.getAttribute('tons'));
+    return {
+      title:[unit.getAttribute('name'),unit.getAttribute('model')].filter(Boolean).join(' '),
+      config:selected?.getAttribute('name')||'',
+      bv:field(selected,':scope > battle_value')||field(unit,':scope > battle_value'),
+      scrap:Number.isFinite(tons)&&tons>0?tons*(/clan|mixed/i.test(tech)||/mixed/i.test(field(unit,':scope > baseloadout > info'))?15:10):undefined,
+      alternatives,selected,tech,tons
+    };
+  }
 
-    const locations = mech.localName === 'combatvehicle' ? [['Front','front'], ['Left','left'], ['Right','right'],
-      ['Rear','rear'], ['Turret','primaryturret'], ['Second turret','secondaryturret'], ['Rotor','rotor']] : [['Head','hd'], ['Center torso','ct','ctr'], ['Left torso','lt','ltr'],
-      ['Right torso','rt','rtr'], ['Left arm','la'], ['Right arm','ra'],
-      ['Left leg','ll'], ['Right leg','rl'], ['Front left leg','fll'], ['Front right leg','frl'],
-      ['Rear left leg','rll'], ['Rear right leg','rrl']];
-    const armor = locations.map(([name, front, rear]) =>
-      [name, field(mech, 'armor > ' + front), rear ? field(mech, 'armor > ' + rear) : '']
-    ).filter(row => row[1] || row[2]);
-    if (armor.length) target.append(node('h4', 'Armor'), table(mech.localName === 'combatvehicle' ? ['Location', 'Armor'] : ['Location', 'Front', 'Rear'],
-      mech.localName === 'combatvehicle' ? armor.map(row => row.slice(0, 2)) : armor));
-    for (const loadout of mech.querySelectorAll('baseloadout, loadout')) {
-      const equipment = Array.from(loadout.querySelectorAll(':scope > equipment'), item =>
-        [field(item, 'name'), Array.from(item.querySelectorAll('location'), location => location.textContent.trim()).join(', ')]
-      ).filter(row => row[0]);
-      if (equipment.length) target.append(node('h4', loadout.getAttribute('name') || 'Equipment'),
-        table(['Item', 'Location'], equipment));
+  function showMech(unit,target,configuration,pilot) {
+    const details=unitDetails(unit,configuration);
+    const vehicle=unit.localName==='combatvehicle';
+    const base=unit.querySelector(':scope > baseloadout');
+    const record=node('section','');
+    record.className='bt-record';
+    const head=node('header','');
+    head.append(node('strong',vehicle?'BATTLETECH • COMBAT VEHICLE':'BATTLETECH • BATTLEMECH'),node('h3',details.title+(details.config?' · '+details.config:'')));
+    const line=node('p',[details.tons&&details.tons+' tons',details.tech,details.bv&&'BV '+details.bv,field(unit,':scope > motive_type')||unit.getAttribute('motive')].filter(Boolean).join(' | '));
+    head.append(line);record.append(head);
+    const grid=node('div','');grid.className='record-grid';record.append(grid);
+    const panel=(title,...children)=>{
+      const column=node('section','');
+      column.append(node('h4',title),...children);
+      grid.append(column);
+    };
+    const movement=field(details.selected,':scope > info')||field(base,':scope > info');
+    const drive=unit.querySelector(':scope > motive');
+    const engine=unit.querySelector(':scope > engine');
+    const sinks=details.selected?.querySelector(':scope > heatsinks')||base?.querySelector(':scope > heatsinks');
+    const profile=[['Design summary',movement],['Cruise MP',drive?.getAttribute('cruise')],['Engine',[engine?.getAttribute('rating'),engine?.textContent.trim()].filter(Boolean).join(' ')],
+      ['Heat sinks',[sinks?.getAttribute('number'),field(sinks,'type')].filter(Boolean).join(' ')],['Scrap value',details.scrap===undefined?'':details.scrap+' SP']].filter(row=>row[1]);
+    panel('Unit data',table(['Field','Value'],profile));
+    panel('Crew',table(['Field','Value'],[['Name',pilot?.name||'________________'],['Gunnery',pilot?.gunnery||'____'],['Piloting / driving',pilot?.piloting||'____'],
+      ['Special abilities',pilot?.special||'________________'],['Pilot hits','□ □ □ □ □ □'],['Unit damage / repairs',pilot?.damage||pilot?.repair?[pilot.damage,pilot.repair].filter(Boolean).join(' · '):'________________']]));
+    const slots=vehicle?[['Front','front'],['Left','left'],['Right','right'],['Rear','rear'],['Turret','primaryturret'],['Second turret','secondaryturret'],['Rotor','rotor']]:
+      [['Head','hd'],['Center torso','ct'],['Center torso rear','ctr'],['Left torso','lt'],['Left torso rear','ltr'],['Right torso','rt'],['Right torso rear','rtr'],['Left arm','la'],['Right arm','ra'],['Left leg','ll'],['Right leg','rl'],['Front left leg','fll'],['Front right leg','frl'],['Rear left leg','rll'],['Rear right leg','rrl']];
+    const armor=unit.querySelector(':scope > armor');
+    const armorTable=table(['Location','Armor','Damage track'],[]);
+    for(const [label,key] of slots){
+      const count=Number(field(armor,key));
+      if(!Number.isInteger(count)||count<1||count>250)continue;
+      const row=armorTable.tBodies[0].insertRow();
+      row.insertCell().textContent=label;row.insertCell().textContent=count;
+      const track=row.insertCell();track.className='armor-track';
+      for(let i=0;i<count;i++){
+        const pip=node('button','');
+        pip.type='button';pip.setAttribute('aria-label','Mark '+label+' armor '+(i+1));pip.setAttribute('aria-pressed','false');
+        pip.addEventListener('click',()=>pip.setAttribute('aria-pressed',String(pip.getAttribute('aria-pressed')==='false')));
+        track.append(pip);
+      }
     }
-    return title;
+    panel('Armor diagram',armorTable);
+    if(!vehicle){
+      const locations=[...new Set(slots.filter(([,key])=>!['ctr','ltr','rtr'].includes(key)&&Number(field(armor,key))>0).map(([label])=>label))];
+      const internal=unit.querySelector(':scope > internal, :scope > internal_structure');
+      if(internal)panel('Internal structure',table(['Location','Points'],[...internal.children].filter(item=>/^\d+$/.test(item.textContent.trim())).map(item=>[item.localName.toUpperCase(),item.textContent.trim()])));
+      else if(locations.length)panel('Internal structure',table(['Location','Points / damage'],locations.map(label=>[label,'________________'])));
+    }
+    const items=[base,details.selected].flatMap(loadout=>[...(loadout?.querySelectorAll(':scope > equipment')||[])]);
+    const gear=items.map(item=>[field(item,'name'),[...item.querySelectorAll('location')].map(loc=>[loc.textContent.trim(),loc.hasAttribute('index')?Number(loc.getAttribute('index'))+1:''].filter(Boolean).join(' ')).join(', ')]);
+    panel(vehicle?'Weapons and equipment':'Weapons, equipment and critical slots',table(['Item','Location / slot'],gear));
+    if(!vehicle){
+      panel('Heat scale',node('p',Array.from({length:31},(_,i)=>i+' □').join('  ')));
+    }
+    target.replaceChildren(record);
+    return details;
   }
 
   function printButton(label) {
@@ -172,32 +218,43 @@ const MechLibrary = (() => {
     return print;
   }
 
-  async function openEntry(entry) {
-    const id = ++requestId;
+  async function openEntry(entry,configuration,onChange,pilot) {
+    const id=++requestId;
     sheet.replaceChildren();
-    status.textContent = 'Opening ' + entry.label + '…';
+    status.textContent='Opening '+entry.label+'…';
     try {
-      const mech = parseUnit(await entry.read());
-      if (id !== requestId || !dialog.open) return;
-      const title = showMech(mech, sheet);
-      sheet.prepend(printButton('Print / Save as PDF'));
-      if (pickUnit) {
-        const link = node('button', 'Link this unit');
-        link.type = 'button';
-        link.className = 'primary';
-        link.addEventListener('click', () => {
-          if (id !== requestId || !pickUnit) return;
-          const choose = pickUnit;
-          dialog.close();
-          choose({path:entry.path,repoId:entry.repoId},title,mech.querySelector('battle_value')?.textContent.trim() || '');
+      const unit=parseUnit(await entry.read());
+      if(id!==requestId||!dialog.open)return;
+      const drawing=node('div','');
+      const toolbar=node('div','');toolbar.className='actions sheet-toolbar';
+      toolbar.append(printButton('Print / Save as PDF'));
+      let details=showMech(unit,drawing,configuration,pilot);
+      if(details.alternatives.length){
+        const label=node('label','Configuration');
+        const selection=node('select','');
+        for(const loadout of details.alternatives){
+          const name=loadout.getAttribute('name')||'';
+          const option=node('option',name);option.value=name;selection.append(option);
+        }
+        selection.value=details.config;
+        selection.addEventListener('change',()=>{
+          details=showMech(unit,drawing,selection.value,pilot);
+          onChange?.(details);
         });
-        sheet.prepend(link);
+        label.append(selection);toolbar.append(label);
       }
-      status.textContent = '';
-      sheet.querySelector('h3').focus();
-    } catch (error) {
-      if (id === requestId) status.textContent = error.message;
-    }
+      if(pickUnit){
+        const link=node('button','Link this unit');link.type='button';link.className='primary';
+        link.addEventListener('click',()=>{
+          if(id!==requestId||!pickUnit)return;
+          const choose=pickUnit;dialog.close();
+          choose({path:entry.path,repoId:entry.repoId},details.title,details.bv,details);
+        });
+        toolbar.append(link);
+      }else if(onChange&&configuration!==details.config)onChange(details);
+      sheet.replaceChildren(toolbar,drawing);
+      status.textContent='';
+    }catch(error){if(id===requestId)status.textContent=error.message;}
   }
 
   function nameMatches(name) {
@@ -210,17 +267,16 @@ const MechLibrary = (() => {
   }
 
   async function searchRoster(name) {
-    if (!entries.length || sourceRepositoryId !== null) await indexGitHub();
+    await ensureLibrary();
     const matches = nameMatches(name);
     const exact = matches.filter(entry => entry.search === normalize(name));
-    return {exact:exact.length === 1 ? exact[0] : null, matches:matches.slice(0,8), total:matches.length, ready:entries.length > 0};
+    return {exact:exact.length === 1 ? exact[0] : null, matches:matches.slice(0,8), total:matches.length, ready:true};
   }
 
   async function readRosterEntry(entry) {
     const mech = parseUnit(await entry.read());
     if (!entries.includes(entry)) throw Error('The unit library changed. Search again.');
-    return {ref:{path:entry.path,repoId:entry.repoId},title:[mech.getAttribute('name'),mech.getAttribute('model')].filter(Boolean).join(' ') || entry.label,
-      bv:mech.querySelector('battle_value')?.textContent.trim() || ''};
+    return {...unitDetails(mech),ref:{path:entry.path,repoId:entry.repoId}};
   }
 
   function renderResults() {
@@ -231,6 +287,11 @@ const MechLibrary = (() => {
       return;
     }
     const matches = nameMatches(query.value);
+    if(!matches.length){
+      const add=node('button','Add this design');add.type='button';
+      add.addEventListener('click',()=>showAddDesign(query.value,pickUnit));
+      results.append(add);return;
+    }
     results.append(node('p', matches.length ? 'Showing ' + Math.min(matches.length, 50) + ' of ' + matches.length + ' matches.' : 'No matching unit files.'));
     for (const entry of matches.slice(0, 50)) {
       const button = node('button', entry.label);
@@ -263,22 +324,30 @@ const MechLibrary = (() => {
       const folder = root.tree.find(item => item.type === 'tree' && /^SSW-Master(?:-master)?$/i.test(item.path));
       const tree = await repo.api('/git/trees/' + (folder?.sha || encodeURIComponent(repo.branch)) + '?recursive=1');
       if (id !== requestId) return;
-      const files = tree.tree.filter(item => item.type === 'blob' && isUnit(item.path));
+      const files=tree.tree.filter(item=>item.type==='blob'&&isUnit(item.path)).map(item=>({
+        path:folder?folder.path+'/'+item.path:item.path,sha:item.sha
+      }));
+      if(folder){
+        const custom=root.tree.find(item=>item.type==='tree'&&item.path==='designs');
+        if(custom){
+          const extra=await repo.api('/git/trees/'+custom.sha+'?recursive=1');
+          if(id!==requestId)return;
+          files.push(...extra.tree.filter(item=>item.type==='blob'&&isUnit(item.path)).map(item=>({path:'designs/'+item.path,sha:item.sha})));
+        }
+      }
+      const designs=files.map(item=>({path:item.path,read:async()=>new TextDecoder().decode(await blobBytes(repo,item.sha))}));
+      const extracted=files.some(item=>!item.path.startsWith('designs/'));
       const zip = root.tree.find(item => item.type === 'blob' && /^SSW-Master(?:-master)?\.zip$/i.test(item.path)) ||
         tree.tree.find(item => item.type === 'blob' && /(?:^|\/)SSW-Master(?:-master)?\.zip$/i.test(item.path));
-      if (files.length && !tree.truncated) {
-        installLibrary(files.map(item => ({
-          path: folder ? folder.path + '/' + item.path : item.path,
-          read: async () => new TextDecoder().decode(await blobBytes(repo, item.sha))
-        })), 'GitHub', repo.id);
+      if(extracted&&!tree.truncated){
+        installLibrary(designs,'GitHub',repo.id);
       } else if (zip) {
         status.textContent = 'Reading the GitHub ZIP…';
         const bytes = await blobBytes(repo, zip.sha);
         if (id !== requestId) return;
-        installLibrary(zipEntries(bytes), 'the GitHub ZIP', repo.id);
+        installLibrary([...zipEntries(bytes),...designs], 'the GitHub ZIP', repo.id);
       } else {
-        throw Error(tree.truncated ? 'GitHub returned an incomplete file index. Try a local SSW ZIP.' :
-          'No .ssw, .saw, or SSW-Master ZIP files were found on the default branch.');
+        installLibrary(designs,'GitHub',repo.id);
       }
       indexedRepository = repo;
     } catch (error) {
@@ -319,36 +388,94 @@ const MechLibrary = (() => {
     dialog.close();
     showCompanyDialog();
   });
-  async function openLibrary({name = '', choose, local = false} = {}) {
+  async function openLibrary({name = '', choose, local = false, viewMode='lookup'} = {}) {
+    mode=viewMode;
+    dialog.dataset.mode=mode;
+    dialog.querySelector('#mechLibraryTitle').textContent=mode==='sheet'?'BattleTech record sheet':'Mech and vehicle lookup';
     pickUnit = choose;
     initialQuery = name || '';
     sheet.replaceChildren();
     status.textContent = '';
     query.value = initialQuery;
-    dialog.showModal();
+    if(!dialog.open)dialog.showModal();
     connect.hidden = Boolean(companyRepo);
-    if (!local || !entries.length || sourceRepositoryId !== null) await indexGitHub();
-    if (controls.hidden) {
-      if (!companyRepo && !entries.length) status.textContent = 'Connect GitHub or choose the local SSW ZIP.';
-      return;
-    }
-    renderResults();
+    dialog.querySelector('#mechZipChoice').hidden=Boolean(companyRepo)||mode!=='lookup';
+    if(!local||!entries.length||sourceRepositoryId!==null)await ensureLibrary();
+    controls.hidden=mode==='sheet';
+    if(mode!=='sheet')renderResults();
+  }
+
+  function readLocalDesigns(){
+    try{return JSON.parse(localStorage.getItem(customKey)||'{}');}catch{return {};}
+  }
+
+  function localDesigns(){
+    return Object.entries(readLocalDesigns()).map(([path,xml])=>({path,local:true,read:async()=>xml}));
+  }
+
+  async function ensureLibrary(){
+    if(companyRepo)await indexGitHub();
+    else if(!entries.length)installLibrary([],'local designs');
+  }
+
+  async function showAddDesign(name,choose){
+    if(!dialog.open)await openLibrary({name,choose,viewMode:choose?'picker':'lookup'});
+    const id=++requestId;
+    const box=node('section','');
+    box.className='sheet';
+    box.append(node('h3','Add this design'));
+    const label=node('label','Upload a Solaris Skunk Werks or Solaris Armor Werks design');
+    const input=node('input','');
+    input.type='file';input.accept='.ssw,.saw';label.append(input);box.append(label);
+    sheet.replaceChildren(box);status.textContent='';
+    input.addEventListener('change',async()=>{
+      const file=input.files[0];
+      if(!file)return;
+      input.disabled=true;
+      try{
+        if(!isUnit(file.name)||file.size>200000)throw Error('Choose an .ssw or .saw file up to 200 KB.');
+        const xml=await file.text();
+        if(/<!DOCTYPE|<!ENTITY/i.test(xml))throw Error('Design XML cannot include a DOCTYPE or entities.');
+        const unit=parseUnit(xml);
+        const details=unitDetails(unit);
+        if(!details.title)throw Error('The design is missing its name.');
+        const ext=unit.localName==='mech'?'.ssw':'.saw';
+        const filename=details.title.replace(/[^\p{L}\p{N} .()_-]/gu,'_').slice(0,120)+ext;
+        const path='designs/'+crypto.randomUUID()+'/'+filename;
+        const repo=companyRepo;
+        if(id!==requestId||!dialog.open)return;
+        if(repo){
+          await repo.api('/contents/'+repo.path(path),{method:'PUT',body:JSON.stringify({
+            branch:repo.branch,message:'Add custom BattleTech design',content:CompanyXML.toBase64(new TextEncoder().encode(xml))
+          })});
+        }else{
+          localStorage.setItem(customKey,JSON.stringify({...readLocalDesigns(),[path]:xml}));
+        }
+        if(id!==requestId||!dialog.open)return;
+        const entry={path,label:details.title,repoId:repo?.id??null,search:normalize(details.title),read:async()=>xml};
+        entries.push(entry);
+        pickUnit=choose;
+        await openEntry(entry);
+      }catch(error){if(id===requestId)status.textContent=error.message;}
+      finally{input.disabled=false;input.value='';}
+    });
   }
 
   function findEntry(ref) {
-    return entries.find(entry => entry.repoId === ref.repoId && entry.path === ref.path);
+    return entries.find(entry=>entry.repoId===ref.repoId&&entry.path===ref.path)||
+      (ref.repoId===null?localDesigns().find(entry=>entry.path===ref.path):undefined);
   }
 
-  async function view(ref) {
-    await openLibrary({local:ref.repoId === null});
+  async function view(ref,configuration,onChange,pilot) {
+    await openLibrary({local:ref.repoId === null,viewMode:'sheet'});
     if (!dialog.open) return;
     const entry = findEntry(ref);
-    if (entry) await openEntry(entry);
-    else status.textContent = 'Linked sheet unavailable. Connect its GitHub repository or load its local ZIP and retry.';
+    if(entry)await openEntry(entry,configuration,onChange,pilot);
+    else status.textContent='This linked design is unavailable in the current library.';
   }
 
   async function formation(name, units) {
-    await openLibrary({local:units.every(unit => !unit.sheet || unit.sheet.repoId === null)});
+    await openLibrary({local:units.every(unit=>!unit.sheet||unit.sheet.repoId===null),viewMode:'sheet'});
     if (!dialog.open) return;
     const id = ++requestId;
     status.textContent = 'Opening formation sheets…';
@@ -374,7 +501,7 @@ const MechLibrary = (() => {
         const card = node('section', '');
         card.id = 'formation-unit-' + (index + 1);
         card.className = 'formation-unit';
-        showMech(loaded.get(entry), card);
+        showMech(loaded.get(entry),card,unit.config,unit.pilot);
         const link = node('a', label);
         link.href = '#' + card.id;
         link.addEventListener('click', event => {
@@ -399,5 +526,5 @@ const MechLibrary = (() => {
     pickUnit = undefined;
   });
   document.querySelector('#openMechLibrary').addEventListener('click', () => openLibrary());
-  return {pick:(name,choose) => openLibrary({name,choose}), view, formation, searchRoster, readRosterEntry};
+  return {pick:(name,choose) => openLibrary({name,choose,viewMode:'picker'}),add:showAddDesign,view,formation,searchRoster,readRosterEntry};
 })();

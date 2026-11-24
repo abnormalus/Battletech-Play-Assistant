@@ -16,17 +16,17 @@ Set the current system, Force Scale, travel mix and travel cost method, then pub
 
 On the **Contract sheet** or **MSRB History**, advance one month to post upkeep of 500 SP per Force Scale and collect monthly pay while a signed contract is active. **Resolve contract** records the outcome, final payment, scrap proceeds, and reputation change, then ends monthly contract pay.
 
-On the **Force sheet**, type in **Unit / variant** to search the library. Choose a result or press Enter to auto-link a unique exact name. Linking fills in the unit name and BV. **Link unit sheet** opens the full picker. Record a scrap value on each roster entry. Formation lists link to individual sheets, and **View formation sheets** opens all linked sheets with a print option.
+On the **Force sheet**, create formations and add units beneath them. The pilot roster tracks skills, availability, training, and advances. Assign pilots from the unit dropdown. Search for a unit by name, link a design, and click its name to open a printable record sheet. For Omni units, choose the configuration on the record sheet. The selected configuration updates roster BV. Scrap value uses the Mercenaries tonnage-based selling rate, applied to both BattleMechs and vehicles.
 
 ## Private GitHub sync
 
-Choose **Open** and connect to the private library and campaign repository using a fine-grained token scoped to that repository with **Contents: Read and write**. The same session powers company sync and unit lookup. Select a company from the GitHub picker, or choose **Open local backup** to restore an XML or JSON backup. **Save** gives each new company its own `companies/<company-folder>/company.xml` file. Autosync updates the open company while connected.
+Choose **Connect GitHub** to link a private library and campaign repository using a fine-grained token scoped to that repository with **Contents: Read and write**. The browser remembers that key until you disconnect. Only save a key on a browser profile you trust. **Open** lists companies or restores a local XML or JSON backup. **Save** defaults new saves to the company name and date. Use the **Save** dropdown for **Save as…**.
 
-On the Contract sheet, adjust the offered steps before choosing Sign contract. Negotiation uses up to twice Scale in available Reputation and up to two exchanges of two concession steps for one upgrade step. Sign records a snapshot in MSRB History. Current campaign Reputation remains the basis for future negotiations.
+Company XML includes the pilot roster, vehicle roster, financial ledger, and company finances. Current SP is calculated from the starting balance and recorded transactions.
 
 ## Mech and vehicle lookup
 
-After connecting through **Open**, choose **Mech lookup** to search the repository’s extracted `.ssw` and `.saw` files or its `SSW-Master-master.zip` archive. You can also select a local ZIP. Search by name or model, select a result, and choose **Print / Save as PDF**.
+Use **Mech lookup** to search extracted `.ssw` and `.saw` files or a repository `SSW-Master-master.zip`. The local ZIP option is available in Mech lookup while GitHub is disconnected. When no design matches, choose **Add this design** to upload an `.ssw` or `.saw` file.
 
 ## Development
 
