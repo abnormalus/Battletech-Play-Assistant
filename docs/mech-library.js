@@ -112,22 +112,6 @@ const MechLibrary = (() => {
     if (dialog.open) query.focus();
   }
 
-  function table(headers, rows) {
-    const element = document.createElement('table');
-    const heading = element.createTHead().insertRow();
-    for (const header of headers) {
-      const cell = node('th', header);
-      cell.scope = 'col';
-      heading.append(cell);
-    }
-    const body = element.createTBody();
-    for (const row of rows) {
-      const line = body.insertRow();
-      for (const value of row) line.insertCell().textContent = value;
-    }
-    return element;
-  }
-
   function parseUnit(xml) {
     const documentXml = new DOMParser().parseFromString(xml, 'application/xml');
     const mech = documentXml.documentElement;
@@ -152,144 +136,67 @@ const MechLibrary = (() => {
     };
   }
 
-  function showMech(unit,target,configuration,pilot) {
-    const details=unitDetails(unit,configuration);
-    const vehicle=unit.localName==='combatvehicle';
-    const base=unit.querySelector(':scope > baseloadout');
-    const record=node('section','');
-    record.className='bt-record';
-    const head=node('header','');
-    head.append(node('strong',vehicle?'BATTLETECH • COMBAT VEHICLE':'BATTLETECH • BATTLEMECH'),node('h3',details.title+(details.config?' · '+details.config:'')));
-    const line=node('p',[details.tons&&details.tons+' tons',details.tech,details.bv&&'BV '+details.bv,field(unit,':scope > motive_type')||unit.getAttribute('motive')].filter(Boolean).join(' | '));
-    head.append(line);record.append(head);
-    const grid=node('div','');grid.className='record-grid';record.append(grid);
-    const panel=(title,...children)=>{
-      const column=node('section','');
-      column.append(node('h4',title),...children);
-      grid.append(column);
-    };
-    const data=BattleTechSheetData.decode(unit,details,pilot);
-    const engine=unit.querySelector(':scope > engine');
-    const sinks=details.selected?.querySelector(':scope > heatsinks')||base?.querySelector(':scope > heatsinks');
-    const {walk,run,jump,jumpType}=data.movement;
-    const profile=[
-      [vehicle?'Cruise MP':'Walk MP',walk],[vehicle?'Flank MP':'Run MP',run],['Jump MP',jumpType?jump+' · '+jumpType:jump],
-      ['Engine',[engine?.getAttribute('rating'),engine?.textContent.trim()].filter(Boolean).join(' ')],
-      ['Armor type',data.armorType],['Structure type',data.structureType],
-      ['Heat sinks',[sinks?.getAttribute('number'),field(sinks,'type')].filter(Boolean).join(' ')],
-      ['Base BV',details.bv],['Crew-adjusted BV',data.adjustedBV],['Scrap value',details.scrap===undefined?'':details.scrap+' SP']
-    ].filter(([,value])=>value!==undefined&&value!=='');
-    panel('Unit data',table(['Field','Value'],profile));
-    panel('Crew',table(['Field','Value'],[['Name',pilot?.name||'________________'],['Gunnery',pilot?.gunnery||'____'],['Piloting / driving',pilot?.piloting||'____'],
-      ['Special abilities',pilot?.special||'________________'],['Pilot hits','□ □ □ □ □ □'],['Unit damage / repairs',pilot?.damage||pilot?.repair?[pilot.damage,pilot.repair].filter(Boolean).join(' · '):'________________']]));
-
-    function trackTable(key,label){
-      const grid=table(['Location',label,'Damage track'],[]);
-      for(const location of data.locations){
-        const count=location[key];
-        if(!Number.isInteger(count)||count<0||count>250)continue;
-        const row=grid.tBodies[0].insertRow();
-        row.insertCell().textContent=location.label;
-        row.insertCell().textContent=count;
-        const track=row.insertCell();
-        track.className='armor-track';
-        for(let i=0;i<count;i++){
-          const pip=node('button','');
-          pip.type='button';
-          pip.setAttribute('aria-label','Mark '+location.label+' '+label.toLowerCase()+' '+(i+1));
-          pip.setAttribute('aria-pressed','false');
-          pip.addEventListener('click',()=>pip.setAttribute('aria-pressed',String(pip.getAttribute('aria-pressed')==='false')));
-          track.append(pip);
+  function classicViewer(toolbar,title,generate,active){
+    const output=node('div','');
+    const frame=node('iframe','');frame.className='classic-pdf-view';
+    frame.title=title;frame.hidden=true;
+    const link=node('a','Open or print PDF');link.target='_blank';link.rel='noopener';link.hidden=true;
+    const input=node('input','');input.type='file';input.accept='.pdf,application/pdf';input.hidden=true;
+    const attach=node('button','Attach Classic blank PDF');attach.type='button';attach.hidden=true;
+    attach.addEventListener('click',()=>input.click());
+    let url,run=0;
+    function reset(){
+      frame.hidden=true;frame.removeAttribute('src');link.hidden=true;link.removeAttribute('href');
+      if(url){URL.revokeObjectURL(url);url=undefined;}
+    }
+    dialog.addEventListener('close',()=>{run++;reset();},{once:true});
+    async function refresh(file){
+      const version=++run,repo=companyRepo;
+      const current=()=>active()&&version===run;
+      reset();attach.hidden=true;
+      status.textContent=file&&repo?'Saving the Classic PDF template to GitHub…':'Preparing Classic record sheet…';
+      try{
+        const template=file?await ClassicRecordPDF.attach(file,repo):await ClassicRecordPDF.template(repo);
+        if(!current())return;
+        if(!template){
+          attach.hidden=false;
+          status.textContent=repo?'This library has no Classic PDF template yet. Attach it once to share it with everyone.':'Attach the Classic PDF template for this device.';
+          return;
+        }
+        const result=await generate(template);
+        if(!current())return;
+        url=URL.createObjectURL(result.pdf);frame.src=url;link.href=url;
+        frame.hidden=false;link.hidden=false;status.textContent=result.note||'';
+      }catch(error){
+        if(current()){
+          status.textContent=error.message;
+          if(file)attach.hidden=false;
         }
       }
-      return grid;
     }
-    panel('Armor diagram',trackTable('armor','Armor'));
-    if(data.locations.some(location=>location.internal!==undefined)){
-      panel('Internal structure',trackTable('internal','Structure'));
-    }
-
-    const weapons=data.items.filter(item=>!/^ammunition$/i.test(item.type));
-    const ammo=data.items.filter(item=>/^ammunition$/i.test(item.type));
-    panel('Weapons and equipment',table(['Item','Location'],weapons.map(item=>[item.name,item.placement.join(', ')])));
-    if(ammo.length)panel('Ammunition',table(['Bin','Location','Shots'],ammo.map(item=>[item.name,item.placement.join(', '),item.shots??'—'])));
-    if(!vehicle&&data.criticals.length){
-      const byLocation=new Map();
-      for(const slot of data.criticals){
-        if(!byLocation.has(slot.code))byLocation.set(slot.code,[]);
-        byLocation.get(slot.code).push(slot);
-      }
-      const rows=data.locations.flatMap(location=>(byLocation.get(location.code)||[])
-        .sort((a,b)=>a.slot-b.slot).map(item=>[location.label,item.slot+1,item.name]));
-      if(rows.length)panel('Recorded critical slots',table(['Location','Slot','Component'],rows));
-    }
-    if(!vehicle){
-      panel('Heat scale',node('p',Array.from({length:31},(_,i)=>i+' □').join('  ')));
-    }
-    target.replaceChildren(record);
-    return details;
+    input.addEventListener('change',()=>{
+      const file=input.files[0];input.value='';
+      if(file)refresh(file);
+    });
+    toolbar.append(attach,input,link);
+    output.append(frame);
+    return {output,refresh};
   }
 
-  function printButton(label) {
-    const print = node('button', label);
-    print.type = 'button';
-    print.addEventListener('click', () => window.print());
-    return print;
-  }
-
-  async function openEntry(entry,configuration,onChange,pilot) {
+  async function openEntry(entry,configuration,onChange,pilot){
     const id=++requestId;
+    const active=()=>id===requestId&&dialog.open;
     sheet.replaceChildren();
     status.textContent='Opening '+entry.label+'…';
-    try {
+    try{
       const unit=parseUnit(await entry.read());
-      if(id!==requestId||!dialog.open)return;
-      const drawing=node('div','');
+      if(!active())return;
       const toolbar=node('div','');toolbar.className='actions sheet-toolbar';
-      toolbar.append(printButton('Print / Save as PDF'));
-      let details=showMech(unit,drawing,configuration,pilot);
-      const pdfAction=node('button','Classic PDF');
-      pdfAction.type='button';
-      const templateInput=node('input','');
-      templateInput.type='file';templateInput.accept='.pdf,application/pdf';templateInput.hidden=true;
-      const pdfLink=node('a','Open filled PDF');pdfLink.hidden=true;pdfLink.target='_blank';pdfLink.rel='noopener';
-      let pdfUrl;
-      function resetPdf(){
-        if(pdfUrl)URL.revokeObjectURL(pdfUrl);
-        pdfUrl=undefined;pdfLink.hidden=true;pdfLink.removeAttribute('href');
-      }
-      dialog.addEventListener('close',resetPdf,{once:true});
-      async function generateClassicPDF(template){
-        const configuration=details.config;
-        const blob=await ClassicRecordPDF.fill(template,unit,details,BattleTechSheetData.decode(unit,details,pilot),pilot);
-        if(id!==requestId||!dialog.open||configuration!==details.config)return;
-        resetPdf();
-        pdfUrl=URL.createObjectURL(blob);pdfLink.href=pdfUrl;pdfLink.hidden=false;
-        pdfLink.focus();status.textContent='Classic PDF ready.';
-      }
-      function onPdfError(error){if(id===requestId)status.textContent=error.message;}
-      pdfAction.addEventListener('click',async()=>{
-        pdfAction.disabled=true;
-        try{
-          const template=await ClassicRecordPDF.template();
-          if(id!==requestId||!dialog.open)return;
-          if(template)await generateClassicPDF(template);
-          else{
-            status.textContent='Choose the E-CAT35001RS blank record sheets PDF to keep on this device.';
-            templateInput.click();
-          }
-        }catch(error){onPdfError(error);}
-        finally{pdfAction.disabled=false;}
-      });
-      templateInput.addEventListener('change',async()=>{
-        const file=templateInput.files[0];
-        if(!file)return;
-        pdfAction.disabled=true;
-        try{await ClassicRecordPDF.attach(file);await generateClassicPDF(file);}
-        catch(error){onPdfError(error);}
-        finally{pdfAction.disabled=false;templateInput.value='';}
-      });
-      toolbar.append(pdfAction,templateInput,pdfLink);
+      let details=unitDetails(unit,configuration);
+      const viewer=classicViewer(toolbar,entry.label,async template=>{
+        const selected=details;
+        return {pdf:await ClassicRecordPDF.fill(template,unit,selected,BattleTechSheetData.decode(unit,selected,pilot),pilot)};
+      },active);
       if(details.alternatives.length){
         const label=node('label','Configuration');
         const selection=node('select','');
@@ -299,24 +206,24 @@ const MechLibrary = (() => {
         }
         selection.value=details.config;
         selection.addEventListener('change',()=>{
-          resetPdf();
-          details=showMech(unit,drawing,selection.value,pilot);
+          details=unitDetails(unit,selection.value);
           onChange?.(details);
+          viewer.refresh();
         });
-        label.append(selection);toolbar.append(label);
+        label.append(selection);toolbar.prepend(label);
       }
       if(pickUnit){
         const link=node('button','Link this unit');link.type='button';link.className='primary';
         link.addEventListener('click',()=>{
-          if(id!==requestId||!pickUnit)return;
+          if(!active()||!pickUnit)return;
           const choose=pickUnit;dialog.close();
           choose({path:entry.path,repoId:entry.repoId},details.title,details.bv,details);
         });
-        toolbar.append(link);
+        toolbar.prepend(link);
       }else if(onChange&&configuration!==details.config)onChange(details);
-      sheet.replaceChildren(toolbar,drawing);
-      status.textContent='';
-    }catch(error){if(id===requestId)status.textContent=error.message;}
+      sheet.replaceChildren(toolbar,viewer.output);
+      await viewer.refresh();
+    }catch(error){if(active())status.textContent=error.message;}
   }
 
   function nameMatches(name) {
@@ -548,7 +455,7 @@ const MechLibrary = (() => {
         if(!entries.some(item=>item.path===path&&item.repoId===repo.id))entries.push(entry);
         pickUnit=choose;
         await openEntry(entries.find(item=>item.path===path&&item.repoId===repo.id));
-        if(dialog.open&&repo===companyRepo)status.textContent='Design saved to '+repo.name+'.';
+        if(dialog.open&&repo===companyRepo&&!status.textContent)status.textContent='Design saved to '+repo.name+'.';
       }catch(error){if(id===requestId)status.textContent=error.message;}
       finally{input.disabled=false;input.value='';}
     });
@@ -567,51 +474,31 @@ const MechLibrary = (() => {
     else status.textContent='This linked design is unavailable in the current library.';
   }
 
-  async function formation(name, units) {
+  async function formation(name,units){
     await openLibrary({local:units.every(unit=>!unit.sheet||unit.sheet.repoId===null),viewMode:'sheet'});
-    if (!dialog.open) return;
-    const id = ++requestId;
-    status.textContent = 'Opening formation sheets…';
-    const links = node('ul', '');
-    const title = node('h3', name + ' formation sheets');
-    const print = printButton('Print formation / Save as PDF');
-    print.disabled = true;
-    sheet.replaceChildren(title, print, links);
-    const loaded = new Map();
-    let available = 0;
-    for (const [index, unit] of units.entries()) {
-      const label = unit.unit || 'Unit ' + (index + 1);
-      const item = node('li', label);
-      links.append(item);
-      const entry = unit.sheet && findEntry(unit.sheet);
-      if (!entry) {
-        item.append(unit.sheet ? ' (sheet unavailable)' : ' (no linked sheet)');
-        continue;
+    if(!dialog.open)return;
+    const id=++requestId;
+    const active=()=>id===requestId&&dialog.open;
+    const toolbar=node('div','');toolbar.className='actions sheet-toolbar';
+    const title=name+' formation sheets';
+    toolbar.append(node('strong',title));
+    const viewer=classicViewer(toolbar,title,async template=>{
+      const files=[],skipped=[],loaded=new Map();
+      for(const [index,unit] of units.entries()){
+        if(!active())throw Error('The formation viewer was closed.');
+        const entry=unit.sheet&&findEntry(unit.sheet);
+        try{
+          if(!entry)throw Error('Design unavailable.');
+          if(!loaded.has(entry))loaded.set(entry,parseUnit(await entry.read()));
+          const design=loaded.get(entry),details=unitDetails(design,unit.config);
+          files.push(await ClassicRecordPDF.fill(template,design,details,BattleTechSheetData.decode(design,details,unit.pilot),unit.pilot));
+        }catch{skipped.push(unit.unit||'Unit '+(index+1));}
       }
-      try {
-        if (!loaded.has(entry)) loaded.set(entry, parseUnit(await entry.read()));
-        if (id !== requestId || !dialog.open) return;
-        const card = node('section', '');
-        card.id = 'formation-unit-' + (index + 1);
-        card.className = 'formation-unit';
-        showMech(loaded.get(entry),card,unit.config,unit.pilot);
-        const link = node('a', label);
-        link.href = '#' + card.id;
-        link.addEventListener('click', event => {
-          event.preventDefault();
-          card.scrollIntoView({block:'start'});
-          card.querySelector('h3').focus({preventScroll:true});
-        });
-        item.replaceChildren(link);
-        sheet.append(card);
-        available++;
-      } catch {
-        if (id !== requestId || !dialog.open) return;
-        item.append(' (could not load sheet)');
-      }
-    }
-    print.disabled = available === 0;
-    status.textContent = available ? '' : 'No formation sheets are available from the current library.';
+      if(!files.length)throw Error('No Classic sheets available for this formation.');
+      return {pdf:await ClassicRecordPDF.combine(files),note:skipped.length?'Sheets unavailable for '+skipped.join(', ')+'.':''};
+    },active);
+    sheet.replaceChildren(toolbar,viewer.output);
+    await viewer.refresh();
   }
 
   dialog.addEventListener('close', () => {

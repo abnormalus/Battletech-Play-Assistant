@@ -34,4 +34,4 @@ The PWA source lives in `docs/`. Bump the cache version in `docs/sw.js` when cha
 
 ## Classic printable PDF
 
-Open a linked unit sheet and select **Classic PDF**. On first use, choose the E-CAT35001RS BattleTech Blank Record Sheets PDF from your device. The app stores it in this browser and fills a copy of the matching biped, quad, ground, VTOL, or naval page. Open the filled PDF to print. Armor and structure totals are filled in on the template; its existing pip tracks and critical-hit references are preserved.
+Open a linked unit to view its filled Classic PDF. With GitHub connected, the first player to attach the supported E-CAT35001RS blank PDF shares it with everyone in the private repository. Other players load that template automatically. The app fills the matching biped, quad, ground, VTOL, or naval page. Formation sheets are combined into one printable PDF.

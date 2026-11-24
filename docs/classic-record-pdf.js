@@ -37,14 +37,66 @@ const ClassicRecordPDF=(()=>{
     });
     return loading;
   }
-  async function attach(file){
-    const bytes=await file.arrayBuffer();
+  const path='templates/E-CAT35001RS-BattleTech-Blank-Record-Sheets.pdf';
+  const keyFor=repo=>repo?storageKey+'-'+repo.id:storageKey;
+  async function validate(file){
+    const bytes=new Uint8Array(await file.arrayBuffer());
     const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');
     if(hash!==templateHash)throw Error('Choose the supported E-CAT35001RS BattleTech Blank Record Sheets PDF.');
-    await pdfStore('readwrite',store=>store.put(file,storageKey));
+    return bytes;
   }
-  async function template(){
-    try{return await pdfStore('readonly',store=>store.get(storageKey));}catch{return undefined;}
+  async function cached(key){
+    try{return await pdfStore('readonly',store=>store.get(key));}catch{return undefined;}
+  }
+  async function remember(key,file){
+    try{await pdfStore('readwrite',store=>store.put(file,key));}catch{}
+  }
+  async function download(repo){
+    const ref='?ref='+encodeURIComponent(repo.branch);
+    let metadata;
+    try{metadata=await repo.api('/contents/'+repo.path(path)+ref);}
+    catch(error){if(error.status===404)return undefined;throw error;}
+    if(!metadata.sha||metadata.type!=='file')throw Error('The GitHub template path does not point to a PDF file.');
+    const blob=await repo.api('/git/blobs/'+metadata.sha);
+    if(blob.encoding!=='base64')throw Error('GitHub did not return the template PDF.');
+    const file=new Blob([CompanyXML.fromBase64(blob.content)],{type:'application/pdf'});
+    await validate(file);
+    return file;
+  }
+  async function attach(file,repo){
+    const bytes=await validate(file);
+    if(repo){
+      try{
+        const result=await repo.api('/contents/'+repo.path(path),{method:'PUT',body:JSON.stringify({
+          branch:repo.branch,message:'Store shared Classic record sheet template',content:CompanyXML.toBase64(bytes)
+        })});
+        if(!result.content?.sha)throw Error('GitHub did not confirm that the template was saved.');
+      }catch(error){
+        if(![409,422].includes(error.status)||!await download(repo))throw error;
+      }
+    }
+    await remember(keyFor(repo),file);
+    return file;
+  }
+  async function template(repo){
+    const key=keyFor(repo);
+    const local=await cached(key);
+    if(local||!repo)return local;
+    const shared=await download(repo);
+    if(shared){await remember(key,shared);return shared;}
+    const original=await cached(storageKey);
+    return original?attach(original,repo):undefined;
+  }
+  async function combine(files){
+    if(files.length===1)return files[0];
+    const lib=await loadLibrary();
+    const merged=await lib.PDFDocument.create();
+    for(const file of files){
+      const source=await lib.PDFDocument.load(await file.arrayBuffer());
+      const pages=await merged.copyPages(source,source.getPageIndices());
+      for(const page of pages)merged.addPage(page);
+    }
+    return new Blob([await merged.save()],{type:'application/pdf'});
   }
   function chooseLayout(data){
     if(data.vehicle){
@@ -146,5 +198,5 @@ const ClassicRecordPDF=(()=>{
     }
     return new Blob([await document.save()],{type:'application/pdf'});
   }
-  return {attach,template,fill};
+  return {attach,template,fill,combine};
 })();

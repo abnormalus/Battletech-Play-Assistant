@@ -64,3 +64,5 @@ dialog::backdrop{background:#061012b8}dialog h3{margin-top:1rem}.inline-check{di
  .record-grid section{break-inside:avoid}
  #mechSheet .armor-track button{print-color-adjust:exact}
 }
+
+.classic-pdf-view{width:100%;height:72vh;border:1px solid var(--line);background:white}
