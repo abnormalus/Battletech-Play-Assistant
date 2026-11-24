@@ -168,42 +168,61 @@ const MechLibrary = (() => {
       column.append(node('h4',title),...children);
       grid.append(column);
     };
-    const movement=field(details.selected,':scope > info')||field(base,':scope > info');
-    const drive=unit.querySelector(':scope > motive');
+    const data=BattleTechSheetData.decode(unit,details,pilot);
     const engine=unit.querySelector(':scope > engine');
     const sinks=details.selected?.querySelector(':scope > heatsinks')||base?.querySelector(':scope > heatsinks');
-    const profile=[['Design summary',movement],['Cruise MP',drive?.getAttribute('cruise')],['Engine',[engine?.getAttribute('rating'),engine?.textContent.trim()].filter(Boolean).join(' ')],
-      ['Heat sinks',[sinks?.getAttribute('number'),field(sinks,'type')].filter(Boolean).join(' ')],['Scrap value',details.scrap===undefined?'':details.scrap+' SP']].filter(row=>row[1]);
+    const {walk,run,jump,jumpType}=data.movement;
+    const profile=[
+      [vehicle?'Cruise MP':'Walk MP',walk],[vehicle?'Flank MP':'Run MP',run],['Jump MP',jumpType?jump+' · '+jumpType:jump],
+      ['Engine',[engine?.getAttribute('rating'),engine?.textContent.trim()].filter(Boolean).join(' ')],
+      ['Armor type',data.armorType],['Structure type',data.structureType],
+      ['Heat sinks',[sinks?.getAttribute('number'),field(sinks,'type')].filter(Boolean).join(' ')],
+      ['Base BV',details.bv],['Crew-adjusted BV',data.adjustedBV],['Scrap value',details.scrap===undefined?'':details.scrap+' SP']
+    ].filter(([,value])=>value!==undefined&&value!=='');
     panel('Unit data',table(['Field','Value'],profile));
     panel('Crew',table(['Field','Value'],[['Name',pilot?.name||'________________'],['Gunnery',pilot?.gunnery||'____'],['Piloting / driving',pilot?.piloting||'____'],
       ['Special abilities',pilot?.special||'________________'],['Pilot hits','□ □ □ □ □ □'],['Unit damage / repairs',pilot?.damage||pilot?.repair?[pilot.damage,pilot.repair].filter(Boolean).join(' · '):'________________']]));
-    const slots=vehicle?[['Front','front'],['Left','left'],['Right','right'],['Rear','rear'],['Turret','primaryturret'],['Second turret','secondaryturret'],['Rotor','rotor']]:
-      [['Head','hd'],['Center torso','ct'],['Center torso rear','ctr'],['Left torso','lt'],['Left torso rear','ltr'],['Right torso','rt'],['Right torso rear','rtr'],['Left arm','la'],['Right arm','ra'],['Left leg','ll'],['Right leg','rl'],['Front left leg','fll'],['Front right leg','frl'],['Rear left leg','rll'],['Rear right leg','rrl']];
-    const armor=unit.querySelector(':scope > armor');
-    const armorTable=table(['Location','Armor','Damage track'],[]);
-    for(const [label,key] of slots){
-      const count=Number(field(armor,key));
-      if(!Number.isInteger(count)||count<1||count>250)continue;
-      const row=armorTable.tBodies[0].insertRow();
-      row.insertCell().textContent=label;row.insertCell().textContent=count;
-      const track=row.insertCell();track.className='armor-track';
-      for(let i=0;i<count;i++){
-        const pip=node('button','');
-        pip.type='button';pip.setAttribute('aria-label','Mark '+label+' armor '+(i+1));pip.setAttribute('aria-pressed','false');
-        pip.addEventListener('click',()=>pip.setAttribute('aria-pressed',String(pip.getAttribute('aria-pressed')==='false')));
-        track.append(pip);
+
+    function trackTable(key,label){
+      const grid=table(['Location',label,'Damage track'],[]);
+      for(const location of data.locations){
+        const count=location[key];
+        if(!Number.isInteger(count)||count<0||count>250)continue;
+        const row=grid.tBodies[0].insertRow();
+        row.insertCell().textContent=location.label;
+        row.insertCell().textContent=count;
+        const track=row.insertCell();
+        track.className='armor-track';
+        for(let i=0;i<count;i++){
+          const pip=node('button','');
+          pip.type='button';
+          pip.setAttribute('aria-label','Mark '+location.label+' '+label.toLowerCase()+' '+(i+1));
+          pip.setAttribute('aria-pressed','false');
+          pip.addEventListener('click',()=>pip.setAttribute('aria-pressed',String(pip.getAttribute('aria-pressed')==='false')));
+          track.append(pip);
+        }
       }
+      return grid;
     }
-    panel('Armor diagram',armorTable);
-    if(!vehicle){
-      const locations=[...new Set(slots.filter(([,key])=>!['ctr','ltr','rtr'].includes(key)&&Number(field(armor,key))>0).map(([label])=>label))];
-      const internal=unit.querySelector(':scope > internal, :scope > internal_structure');
-      if(internal)panel('Internal structure',table(['Location','Points'],[...internal.children].filter(item=>/^\d+$/.test(item.textContent.trim())).map(item=>[item.localName.toUpperCase(),item.textContent.trim()])));
-      else if(locations.length)panel('Internal structure',table(['Location','Points / damage'],locations.map(label=>[label,'________________'])));
+    panel('Armor diagram',trackTable('armor','Armor'));
+    if(data.locations.some(location=>location.internal!==undefined)){
+      panel('Internal structure',trackTable('internal','Structure'));
     }
-    const items=[base,details.selected].flatMap(loadout=>[...(loadout?.querySelectorAll(':scope > equipment')||[])]);
-    const gear=items.map(item=>[field(item,'name'),[...item.querySelectorAll('location')].map(loc=>[loc.textContent.trim(),loc.hasAttribute('index')?Number(loc.getAttribute('index'))+1:''].filter(Boolean).join(' ')).join(', ')]);
-    panel(vehicle?'Weapons and equipment':'Weapons, equipment and critical slots',table(['Item','Location / slot'],gear));
+
+    const weapons=data.items.filter(item=>!/^ammunition$/i.test(item.type));
+    const ammo=data.items.filter(item=>/^ammunition$/i.test(item.type));
+    panel('Weapons and equipment',table(['Item','Location'],weapons.map(item=>[item.name,item.placement.join(', ')])));
+    if(ammo.length)panel('Ammunition',table(['Bin','Location','Shots'],ammo.map(item=>[item.name,item.placement.join(', '),item.shots??'—'])));
+    if(!vehicle&&data.criticals.length){
+      const byLocation=new Map();
+      for(const slot of data.criticals){
+        if(!byLocation.has(slot.code))byLocation.set(slot.code,[]);
+        byLocation.get(slot.code).push(slot);
+      }
+      const rows=data.locations.flatMap(location=>(byLocation.get(location.code)||[])
+        .sort((a,b)=>a.slot-b.slot).map(item=>[location.label,item.slot+1,item.name]));
+      if(rows.length)panel('Recorded critical slots',table(['Location','Slot','Component'],rows));
+    }
     if(!vehicle){
       panel('Heat scale',node('p',Array.from({length:31},(_,i)=>i+' □').join('  ')));
     }
