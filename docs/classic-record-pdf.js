@@ -154,26 +154,49 @@ const ClassicRecordPDF=(()=>{
     if(/clan/i.test(details.tech))put(220,155,'X',8,7);
     if(/inner sphere/i.test(details.tech))put(220,166,'X',8,7);
     const used=new Set();
+    // Coordinates follow the unshaded compartments of the supplied ground template.
+    const left=[[430,91],[458,146],[447,159],[443,159],[427,237],[426,240],[436,240],[419,278],[418,190]];
     const armorRegions={
-      Front:[455,89,512,142],Left:[426,182,445,267],Right:[524,182,542,267],
-      Rear:[443,289,531,305],Turret:[464,225,502,265],'Second turret':[469,151,501,163]
+      Front:[[435,85],[535,85],[506,145],[466,145]],
+      Left:left,Right:left.map(([x,y])=>[971-x,y]),
+      Rear:[[443,285],[529,285],[549,295],[539,307],[434,307],[422,295]],
+      Turret:[[463,224],[509,224],[520,267],[453,267]]
     };
-    function armorPips(location,count){
-      const region=armorRegions[location];
-      if(!region||!Number.isInteger(count)||count<1)return;
-      const [x1,y1,x2,y2]=region;
-      const width=x2-x1,height=y2-y1;
-      const columns=Math.min(count,Math.max(1,Math.ceil(Math.sqrt(count*width/height))));
-      const rows=Math.ceil(count/columns);
-      const space=Math.min(width/columns,height/rows,6);
-      for(let row=0;row<rows;row++){
-        const rowCount=Math.min(columns,count-row*columns);
-        for(let column=0;column<rowCount;column++){
-          page.drawCircle({x:(x1+x2)/2+(column-(rowCount-1)/2)*space,
-            y:page.getHeight()-((y1+y2)/2+(row-(rows-1)/2)*space),
-            size:space*.36,borderWidth:Math.min(.55,space*.13),borderColor:color});
-        }
+    function fits(polygon,x,y,margin){
+      let inside=false;
+      for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+        const [ax,ay]=polygon[j],[bx,by]=polygon[i];
+        if((ay>y)!==(by>y)&&x<(bx-ax)*(y-ay)/(by-ay)+ax)inside=!inside;
+        const dx=bx-ax,dy=by-ay;
+        const along=Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/(dx*dx+dy*dy)));
+        if(Math.hypot(x-ax-along*dx,y-ay-along*dy)<margin)return false;
       }
+      return inside;
+    }
+    function armorPips(location,count){
+      const polygon=armorRegions[location];
+      if(!polygon||!Number.isInteger(count)||count<1)return;
+      const xs=polygon.map(point=>point[0]),ys=polygon.map(point=>point[1]);
+      const left=Math.min(...xs),right=Math.max(...xs),top=Math.min(...ys),bottom=Math.max(...ys);
+      for(let spacing=6;spacing>=.75;spacing-=.25){
+        const radius=spacing*.35;
+        const margin=radius+1.25;
+        const points=[];
+        for(let y=top+margin;y<=bottom-margin;y+=spacing){
+          for(let x=left+margin;x<=right-margin;x+=spacing){
+            if(fits(polygon,x,y,margin))points.push([x,y]);
+          }
+        }
+        if(points.length<count)continue;
+        const cx=(left+right)/2,cy=(top+bottom)/2;
+        const distance=([x,y])=>((x-cx)/(right-left))**2+((y-cy)/(bottom-top))**2;
+        points.sort((a,b)=>distance(a)-distance(b));
+        for(const [x,y] of points.slice(0,count)){
+          page.drawCircle({x,y:page.getHeight()-y,size:radius,borderWidth:Math.min(.55,spacing*.13),borderColor:color});
+        }
+        return;
+      }
+      throw Error('There are too many armor points to fit inside '+location.toLowerCase()+'.');
     }
     const keyFor=location=>({Head:0,'Center torso':1,'Center torso rear':2,'Left torso':3,'Left torso rear':4,'Right torso':5,'Right torso rear':6,'Left arm':7,'Right arm':8,'Left leg':9,'Right leg':10,'Front left leg':7,'Front right leg':8,'Rear left leg':9,'Rear right leg':10,Front:0,Left:1,Right:2,Rear:3,Turret:4,'Second turret':5,Rotor:6}[location.label]);
     for(const location of data.locations){
