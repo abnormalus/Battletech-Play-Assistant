@@ -98,14 +98,18 @@ const ClassicRecordPDF=(()=>{
     }
     return new Blob([await merged.save()],{type:'application/pdf'});
   }
-  let builtIn;
+  const builtInPaths=new Map([[layouts.ground,'ground-vehicle-template.pdf'],[layouts.mech,'biped-mech-template.pdf']]);
+  const builtIn=new Map();
   async function templateFor(repo,data){
-    if(chooseLayout(data)!==layouts.ground)return template(repo);
-    if(!builtIn)builtIn=fetch('./ground-vehicle-template.pdf').then(response=>{
-      if(!response.ok)throw Error('Could not load the built-in ground vehicle template.');
-      return response.blob();
-    }).catch(error=>{builtIn=undefined;throw error;});
-    return builtIn;
+    const path=builtInPaths.get(chooseLayout(data));
+    if(!path)return template(repo);
+    if(!builtIn.has(path)){
+      builtIn.set(path,fetch('./'+path).then(response=>{
+        if(!response.ok)throw Error('Could not load the built-in record sheet template.');
+        return response.blob();
+      }).catch(error=>{builtIn.delete(path);throw error;}));
+    }
+    return builtIn.get(path);
   }
   function chooseLayout(data){
     if(data.vehicle){
@@ -123,7 +127,7 @@ const ClassicRecordPDF=(()=>{
     const template=await lib.PDFDocument.load(await file.arrayBuffer());
     const document=await lib.PDFDocument.create();
     const layout=chooseLayout(data);
-    const [page]=await document.copyPages(template,[layout===layouts.ground?0:layout.index]);
+    const [page]=await document.copyPages(template,[builtInPaths.has(layout)?0:layout.index]);
     document.addPage(page);
     const font=await document.embedFont(lib.StandardFonts.Helvetica);
     const color=lib.rgb(0.08,0.08,0.08);
@@ -169,6 +173,30 @@ const ClassicRecordPDF=(()=>{
       Rear:[[443,274],[530,274],[530,282],[443,282]],
       Turret:[[466,206],[508,206],[511,220],[462,220]]
     };
+    const mirror=(polygon,axis)=>polygon.map(([x,y])=>[axis-x,y]);
+    const bipedArm=[[412,87],[426,91],[426,119],[422,155],[410,159],[411,125]];
+    const bipedTorso=[[440,86],[464,86],[465,118],[450,118],[441,116]];
+    const bipedLeg=[[450,173],[472,176],[469,199],[463,225],[468,252],[454,274],[449,295],[410,295],[422,281],[421,266],[430,230],[438,202]];
+    const rearSide=[[440,309],[471,308],[470,325],[464,344],[440,343]];
+    const bipedArmor={
+      'Head':[[477,68],[492,68],[492,92],[477,92]],
+      'Center torso':[[470,98],[501,98],[498,155],[493,184],[477,184],[473,150]],
+      'Left torso':bipedTorso,'Right torso':mirror(bipedTorso,970),
+      'Left arm':bipedArm,'Right arm':mirror(bipedArm,970),
+      'Left leg':bipedLeg,'Right leg':mirror(bipedLeg,970),
+      'Center torso rear':[[481,291],[490,291],[498,307],[498,330],[503,342],[499,361],[471,361],[467,342],[472,328],[473,308]],
+      'Left torso rear':rearSide,'Right torso rear':mirror(rearSide,970)
+    };
+    const innerArm=[[422,414],[430,415],[431,430],[426,456],[422,473],[422,449]];
+    const innerTorso=[[442,414],[458,412],[460,437],[451,434],[445,429]];
+    const innerLeg=[[445,468],[462,468],[456,491],[450,514],[448,536],[445,553],[427,553],[436,539],[435,526]];
+    const bipedStructure={
+      HD:[[467,397],[479,397],[481,407],[475,411],[470,410],[465,406]],
+      CT:[[467,414],[477,414],[478,440],[476,467],[469,467],[466,441]],
+      LT:innerTorso,RT:mirror(innerTorso,945),
+      LA:innerArm,RA:mirror(innerArm,945),
+      LL:innerLeg,RL:mirror(innerLeg,945)
+    };
     function fits(polygon,x,y,margin){
       let inside=false;
       for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
@@ -205,7 +233,12 @@ const ClassicRecordPDF=(()=>{
       throw Error('There are too many armor points to fit inside '+location.toLowerCase()+'.');
     }
     const keyFor=location=>({Head:0,'Center torso':1,'Center torso rear':2,'Left torso':3,'Left torso rear':4,'Right torso':5,'Right torso rear':6,'Left arm':7,'Right arm':8,'Left leg':9,'Right leg':10,'Front left leg':7,'Front right leg':8,'Rear left leg':9,'Rear right leg':10,Front:0,Left:1,Right:2,Rear:3,Turret:4,'Second turret':5,Rotor:6}[location.label]);
+    if(layout===layouts.mech)page.drawRectangle({x:474,y:page.getHeight()-94,width:21,height:28,color:lib.rgb(1,1,1)});
     for(const location of data.locations){
+      if(layout===layouts.mech){
+        compartmentPips(bipedArmor[location.label],location.label,location.armor);
+        compartmentPips(bipedStructure[location.code],location.label+' structure',location.internal);
+      }
       if(layout===layouts.ground){
         compartmentPips(armorRegions[location.label],location.label,location.armor);
         compartmentPips(structureRegions[location.label],location.label+' structure',location.internal);
