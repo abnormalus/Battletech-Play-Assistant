@@ -51,17 +51,19 @@ const ClassicRecordPDF=(()=>{
   async function remember(key,file){
     try{await pdfStore('readwrite',store=>store.put(file,key));}catch{}
   }
+  const templateName=/^e[\s_-]*cat35001rs[\s_-]*battletech[\s_-]*blank[\s_-]*record[\s_-]*sheets(?:\s*\(\d+\))?\.pdf$/i;
   async function download(repo){
-    const ref='?ref='+encodeURIComponent(repo.branch);
-    let metadata;
-    try{metadata=await repo.api('/contents/'+repo.path(path)+ref);}
-    catch(error){if(error.status===404)return undefined;throw error;}
-    if(!metadata.sha||metadata.type!=='file')throw Error('The GitHub template path does not point to a PDF file.');
-    const blob=await repo.api('/git/blobs/'+metadata.sha);
-    if(blob.encoding!=='base64')throw Error('GitHub did not return the template PDF.');
-    const file=new Blob([CompanyXML.fromBase64(blob.content)],{type:'application/pdf'});
-    await validate(file);
-    return file;
+    const tree=await repo.api('/git/trees/'+encodeURIComponent(repo.branch)+'?recursive=1');
+    const matches=tree.tree.filter(item=>item.type==='blob'&&templateName.test(item.path.split('/').pop()));
+    matches.sort((a,b)=>Number(b.path===path)-Number(a.path===path));
+    if(!matches.length&&tree.truncated)throw Error('GitHub returned an incomplete file list. Store the template in a smaller repository or reconnect and try again.');
+    for(const item of matches){
+      const blob=await repo.api('/git/blobs/'+item.sha);
+      if(blob.encoding!=='base64')throw Error('GitHub did not return the template PDF.');
+      const file=new Blob([CompanyXML.fromBase64(blob.content)],{type:'application/pdf'});
+      try{await validate(file);return file;}catch{}
+    }
+    return undefined;
   }
   async function attach(file,repo){
     const bytes=await validate(file);
